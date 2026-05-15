@@ -1,0 +1,1489 @@
+[DOCUMENT]
+TITLE: SplitClone - Software Requirements Specification
+UID: SC-SRS
+VERSION: 0.10 (draft)
+DATE: 2026-05-14
+PREFIX: SC-
+OPTIONS:
+  ENABLE_MID: False
+  MARKUP: Text
+  AUTO_LEVELS: On
+  VIEW_STYLE: Inline
+  NODE_IN_TOC: True
+
+[[SECTION]]
+TITLE: Introduction
+
+[TEXT]
+STATEMENT: >>>
+SplitClone is an iOS application for tracking shared expenses among a small,
+trusted group of people (e.g. a household, a couple, a trip group). It is
+functionally inspired by Splitwise but deliberately avoids any dedicated
+backend service. Instead, the shared state lives in a single folder that the
+users share among themselves through an existing consumer file-sync service,
+primarily Microsoft OneDrive.
+
+This document specifies the requirements for the Minimum Viable Product (MVP).
+Features that exist in Splitwise but are out of scope for the MVP are listed
+explicitly in section "Out of Scope".
+<<<
+
+[[SECTION]]
+TITLE: Purpose
+
+[TEXT]
+STATEMENT: >>>
+The purpose of SplitClone is to let a small group of users record shared
+expenses, automatically compute who owes whom, and settle balances - without
+any of the users having to operate, pay for, or trust a central server.
+<<<
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Glossary
+
+[TEXT]
+STATEMENT: >>>
+- Ledger: The shared dataset for one group of users (one OneDrive folder == one ledger).
+- Participant: A person identified within a ledger. Not necessarily an app user.
+- App user: A person who runs SplitClone on an iOS device and is authenticated against the shared folder.
+- Expense: A single recorded payment by one participant on behalf of one or more participants.
+- Split: The distribution of an expense amount across participants.
+- Balance: The net amount one participant owes another, derived from all expenses and settlements.
+- Settlement: A recorded transfer of money between two participants that reduces their balance.
+- Label: A short user-defined tag (e.g. "cash", "trip-paris", "groceries") that can be attached to expenses for filtering and organisation. Labels carry no semantic effect on splits or balances.
+- Execution date: The calendar date on which an expense actually occurred in the real world (e.g. the day the ice cream was bought).
+- Entry timestamp: The wall-clock instant at which an expense was recorded in the app, which may be later than the execution date.
+- Cash-basis view: A per-participant projection of the ledger that contains only real money movements from that participant's perspective (amounts they personally paid out or received), suitable for reconciling against a real bank or card account.
+- Virtual-account view: A per-participant projection of the ledger intended to be imported as a separate "virtual" sub-account in a personal finance app. Each joint expense moves the virtual balance by (participant's outlay - participant's share); settlements move it back toward zero. The virtual balance at any moment equals the participant's net position inside the shared ledger.
+- Shared folder provider: The underlying file-sync service (OneDrive in MVP) that hosts the ledger files.
+- Event log: The append-only, per-device record of all changes made on that device, stored on disk as one or more ordered segment files (see Log segment).
+- Log segment: A single file holding a contiguous slice of one device's event log. A device writes to exactly one "open" segment; older segments are closed and immutable. Segments are concatenated in chronological order to reconstruct the device's full log.
+- PWA: Progressive Web App. A web application built on standard browser APIs (HTML/CSS/JS, Service Worker, Web App Manifest) that can be "installed" to the home screen / launchpad on iOS, Android, and desktop and can run offline once cached.
+- Device: In a browser context, a "device" is the (browser, origin, IndexedDB partition) tuple. Two browsers on the same physical iPhone, or the same browser in private-browsing mode, are considered distinct devices.
+- Data key: The 256-bit AES key, one per ledger, used to encrypt all event-log segments at rest in the shared folder. Generated on the device that creates the ledger; never written to the shared folder.
+- Join code: A serialised representation of the data key (as a base64 string with checksum, and as a QR code) that the creator of the ledger shares out-of-band with each new participant device so it can decrypt the ledger contents.
+- Key fingerprint: A short hash derived from the data key (e.g. truncated SHA-256) stored in the ledger's plaintext metadata. A joining device computes the same hash from its entered join code; a mismatch means the wrong code was entered, without revealing the key itself.
+- File format: The collection of on-disk and on-the-wire layouts that SplitClone reads or writes (metadata file, segment directory layout, segment encryption envelope, JSONL event schema, join code encoding, CSV export). Enumerated in SC-ARC-FMT-1.
+- Schema version: The monotonically increasing integer that identifies a snapshot of the file format. Stored in the plaintext metadata file (SC-FR-LED-3) so that any device can decide before reading whether it understands the format.
+<<<
+
+[[/SECTION]]
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Stakeholders and Users
+
+[REQUIREMENT]
+UID: SC-USR-1
+TITLE: Primary user persona
+STATEMENT: >>>
+The primary user is an adult iPhone owner who already uses OneDrive (personal
+or family plan) and wants to track shared expenses with 2 to ~8 other people
+they trust (e.g. flatmates, partner, travel companions).
+<<<
+
+[REQUIREMENT]
+UID: SC-USR-2
+TITLE: Group size assumption
+STATEMENT: >>>
+The MVP shall be designed for ledgers containing between 2 and 10 participants.
+Larger groups are not a goal and may exhibit degraded sync performance.
+<<<
+RATIONALE: >>>
+Per-device append-only logs scale linearly with the number of writers. Beyond
+~10 participants, sync and merge cost stops being negligible on mobile.
+<<<
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Functional Requirements
+
+[[SECTION]]
+TITLE: Ledger Lifecycle
+
+[REQUIREMENT]
+UID: SC-FR-LED-1
+TITLE: Create a new ledger
+STATEMENT: >>>
+The app shall let a user create a new ledger by selecting an empty (or new)
+folder inside their connected shared folder provider. The app shall write an
+initial ledger metadata file into that folder.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-LED-2
+TITLE: Open an existing ledger
+STATEMENT: >>>
+The app shall let a user open an existing ledger by selecting a folder that
+already contains SplitClone ledger metadata. The app shall validate the
+metadata and refuse to open folders that are not recognised SplitClone ledgers.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-LED-3
+TITLE: Ledger metadata
+STATEMENT: >>>
+A ledger shall expose a single plaintext metadata file in its folder. The
+metadata file shall declare at minimum:
+  - The ledger UUID
+  - The schema version
+  - The creation timestamp (UTC)
+  - The encryption marker "encrypted": true (see SC-ARC-ENC-1)
+  - The key fingerprint (see SC-ARC-ENC-3)
+The metadata file shall NOT contain the ledger's human-readable name, its
+participant list, label list, or any other field that could leak sensitive
+information about the ledger's contents to anyone who can read the folder
+but does not hold the data key. The ledger name and the participant /
+label state shall instead be reconstructed from the encrypted event log
+(see SC-ARC-LOG-2).
+<<<
+RATIONALE: >>>
+Once at-rest encryption is in place (SC-ARC-ENC-*), the metadata file is
+the only file in the folder that is visible without the key. Keeping it
+minimal limits what an accidentally-over-shared folder leaks.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: SC-FR-LED-1
+
+[REQUIREMENT]
+UID: SC-FR-LED-4
+TITLE: Single active ledger
+STATEMENT: >>>
+The MVP shall support having exactly one active ledger open at a time per
+device. Switching ledgers shall be possible but is not a frequent operation.
+<<<
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Participants
+
+[REQUIREMENT]
+UID: SC-FR-PRT-1
+TITLE: Add a participant
+STATEMENT: >>>
+Any app user with access to a ledger shall be able to add a new participant
+to that ledger by providing a display name. The system shall assign a stable
+participant UUID.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-PRT-2
+TITLE: Claim a participant identity
+STATEMENT: >>>
+When a user opens a ledger for the first time on their device, the app shall
+let them either (a) claim an existing unclaimed participant entry, or (b)
+create a new participant and claim it. A device shall be bound to exactly one
+participant per ledger.
+<<<
+RATIONALE: >>>
+Because there is no central account system, a "user" is just whichever
+participant a given device claims. Claiming is what links a real human (and
+their OneDrive identity) to a participant UUID inside the ledger.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-PRT-3
+TITLE: Edit participant display name
+STATEMENT: >>>
+A user shall be able to rename any participant in the ledger. The UUID shall
+remain unchanged so existing expenses are not orphaned.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-PRT-4
+TITLE: Participants without devices
+STATEMENT: >>>
+A ledger shall be able to contain participants who do not run the app (e.g.
+a flatmate who is included in splits but does not own an iPhone). Such
+participants can be added by any other user and never claim a device.
+<<<
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Expense Entry
+
+[REQUIREMENT]
+UID: SC-FR-EXP-1
+TITLE: Record an expense
+STATEMENT: >>>
+A user shall be able to record an expense consisting of:
+  - Title (free-form string, max 200 chars)
+  - Amount (decimal with 2 fractional digits, > 0)
+  - Execution date (calendar date when the expense actually occurred, defaulting to today; user-editable)
+  - Payer (exactly one participant)
+  - Participants in the split (one or more participants, defaulting to all)
+  - Labels (zero or more, see section Labels)
+The system shall additionally and automatically assign:
+  - A stable expense UUID
+  - An entry timestamp recording the wall-clock instant at which the expense was recorded in the app (not user-editable)
+The execution date and the entry timestamp shall be stored as two distinct
+fields. Example: ice cream bought on 2026-04-22 but entered in the app on
+2026-04-28T15:00:00Z yields execution date 2026-04-22 and entry timestamp
+2026-04-28T15:00:00Z.
+<<<
+RATIONALE: >>>
+Two dates exist because they answer different questions: "when did this
+spending happen?" (matters for which trip/month it belongs to) versus
+"when did this record enter the system?" (matters for sync/merge ordering
+and audit trail).
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-EXP-2
+TITLE: Currency
+STATEMENT: >>>
+The MVP shall support a single currency per ledger, chosen at ledger creation
+and stored in ledger metadata. Per-expense currency override is out of scope.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-EXP-3
+TITLE: Optional note
+STATEMENT: >>>
+An expense may optionally carry a free-form note (max 2000 chars). The note
+shall be displayed but does not participate in any calculation.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-EXP-4
+TITLE: Edit an expense
+STATEMENT: >>>
+Any user shall be able to edit any field of any expense. An edit shall not
+overwrite the original record in place; it shall be stored as a new event
+that supersedes the previous version of the expense (see SC-ARC-LOG-1).
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-EXP-5
+TITLE: Delete an expense
+STATEMENT: >>>
+Any user shall be able to delete any expense. Deletion shall be recorded as a
+tombstone event so that other devices converge on the deletion when they sync.
+<<<
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Labels
+
+[REQUIREMENT]
+UID: SC-FR-LBL-1
+TITLE: Ledger-scoped label list
+STATEMENT: >>>
+Each ledger shall maintain a shared list of labels. The list is part of the
+ledger state and is therefore visible to all users of that ledger. Labels are
+not shared across ledgers.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-LBL-2
+TITLE: Create a label
+STATEMENT: >>>
+Any user shall be able to create a new label by providing a display name
+(free-form string, max 40 chars, case-insensitive uniqueness within the
+ledger). The system shall assign the label a stable UUID.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-LBL-3
+TITLE: Rename a label
+STATEMENT: >>>
+Any user shall be able to rename an existing label. The UUID shall remain
+unchanged so that existing expense-to-label assignments are preserved.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-LBL-4
+TITLE: Delete a label
+STATEMENT: >>>
+Any user shall be able to delete an existing label. Deletion shall be
+recorded as a tombstone event. Expenses that reference a deleted label
+shall continue to exist; the dangling reference shall be silently elided
+from the derived state so the label simply no longer appears on those
+expenses.
+<<<
+RATIONALE: >>>
+Eliding rather than failing means a deletion racing with concurrent
+assignments converges cleanly without forcing the user to resolve a
+conflict.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-LBL-5
+TITLE: Assign multiple labels to an expense
+STATEMENT: >>>
+A user shall be able to attach zero or more labels to an expense at creation
+time and shall be able to add or remove labels via editing an existing
+expense (see SC-FR-EXP-4). Label assignments are stored as part of the
+expense record.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-LBL-6
+TITLE: Label management UI
+STATEMENT: >>>
+The app shall expose a dedicated screen for viewing the full list of labels
+in the current ledger and for creating, renaming, and deleting labels from
+that screen. The same screen shall show, for each label, the number of
+expenses currently carrying it.
+<<<
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Splitting
+
+[REQUIREMENT]
+UID: SC-FR-SPL-1
+TITLE: Equal split (MVP)
+STATEMENT: >>>
+The MVP shall support equal splits only. Given an expense with amount A and N
+participants in the split, each participant's share shall be A/N rounded to
+the smallest unit of the ledger currency.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-SPL-2
+TITLE: Rounding remainder
+STATEMENT: >>>
+When A/N does not divide evenly into the smallest currency unit, the rounding
+remainder shall be assigned deterministically to the payer so that the sum of
+shares always equals the expense amount exactly.
+<<<
+RATIONALE: >>>
+A deterministic rule prevents balance drift and keeps the algorithm a pure
+function of the ledger state.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-SPL-3
+TITLE: Payer included in split by default
+STATEMENT: >>>
+By default the payer is included as one of the participants in the split. The
+user may exclude the payer at expense entry time, in which case the payer is
+fully reimbursed by the other participants.
+<<<
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Balances and Settlement
+
+[REQUIREMENT]
+UID: SC-FR-BAL-1
+TITLE: Pairwise balances
+STATEMENT: >>>
+For every ordered pair of participants (A, B), the app shall compute the net
+amount A owes B based on all non-deleted expenses and settlements in the
+ledger. The computation shall be a pure function of the event log.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-BAL-2
+TITLE: Per-user summary
+STATEMENT: >>>
+The app shall display, for the participant claimed by the current device, a
+summary listing for each other participant whether the current participant
+owes or is owed and how much.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-BAL-3
+TITLE: Record a settlement
+STATEMENT: >>>
+A user shall be able to record a settlement: a payment from one participant
+to another, with an amount and a date. A settlement shall reduce the recorded
+balance between the two participants accordingly.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-BAL-4
+TITLE: No automatic debt simplification (MVP)
+STATEMENT: >>>
+The MVP shall present raw pairwise balances. Splitwise's "simplify debts"
+re-routing of payments through third parties is out of scope.
+<<<
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Browsing and History
+
+[REQUIREMENT]
+UID: SC-FR-HIS-1
+TITLE: Expense list
+STATEMENT: >>>
+The app shall provide a chronological list of all non-deleted expenses,
+newest first, showing at minimum: date, title, amount, payer, and split size.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-HIS-2
+TITLE: Expense detail view
+STATEMENT: >>>
+Tapping an expense shall reveal its full detail including all participants in
+the split, the amount each owes, the note (if any), the creator, and the
+creation timestamp.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-HIS-3
+TITLE: Filter by participant
+STATEMENT: >>>
+The expense list shall be filterable to show only expenses involving a chosen
+participant (as payer or as split member).
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-HIS-4
+TITLE: Filter by label
+STATEMENT: >>>
+The expense list shall be filterable by one or more labels. When two or more
+labels are selected, the list shall show expenses carrying any of the
+selected labels (logical OR). The label filter shall be combinable with the
+participant filter (logical AND between filter dimensions).
+<<<
+COMMENT: >>>
+OR semantics across labels chosen because it matches user intent more often
+than AND ("show me anything tagged trip-paris or holiday-2026") and matches
+the way most consumer apps handle multi-tag filtering. Revisit if user
+testing disagrees.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-HIS-5
+TITLE: Filter by date range
+STATEMENT: >>>
+The expense list shall be filterable by an execution-date range (from / to,
+either bound optional). The filter shall apply to the execution date
+(SC-FR-EXP-1), not the entry timestamp.
+<<<
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Export to External Finance Apps
+
+[TEXT]
+STATEMENT: >>>
+SplitClone is a ledger for shared expenses, not a personal finance manager.
+Users who track their personal cashflow in apps such as WISO Mein Geld,
+Quicken, YNAB, or similar need a way to pull the relevant slice of the
+shared ledger into those tools without re-typing every line. This section
+specifies that export path.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-EXR-1
+TITLE: Per-participant export
+STATEMENT: >>>
+The app shall let the user export the ledger as a file representing one
+chosen participant's transactions. The export shall reflect only that
+participant's individual money movements (see SC-FR-EXR-3), not the raw
+shared expense list.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-EXR-2
+TITLE: Default participant selection
+STATEMENT: >>>
+The export screen shall default the participant selector to the participant
+claimed by the current device (SC-FR-PRT-2). The user may override this
+selection and export on behalf of any participant in the ledger.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-EXR-3
+TITLE: Export semantics - two selectable modes
+STATEMENT: >>>
+The export screen shall offer the user a choice of two export modes for the
+selected participant P. Both modes share the same CSV schema (see
+SC-FR-EXR-4) and the same sign convention (positive = inflow to P / debit
+to P's external account that mirrors the export; negative = outflow /
+credit). Deleted expenses and deleted settlements shall be excluded in both
+modes.
+
+Mode A - Cash basis:
+Contains only real money movements involving P. Intended to be reconciled
+against P's real bank or card account in the external finance app.
+  - Expense E paid by P: one row, amount = -E.amount, date = E.execution date.
+  - Expense E paid by someone else, P in the split: NOT exported.
+  - Settlement S where P paid: one row, amount = -S.amount, date = S.date.
+  - Settlement S where P received: one row, amount = +S.amount, date = S.date.
+
+Mode B - Virtual account (share basis):
+Intended to be imported into a dedicated "virtual" sub-account in the
+external finance app, where the running balance represents P's net position
+inside the shared ledger.
+  - Expense E in which P is the payer with share s out of total amount T:
+    one row, amount = +(T - s), date = E.execution date. The row is omitted when T = s (P is the sole participant in the split).
+  - Expense E paid by someone else, P in the split with share s: one row,
+    amount = -s, date = E.execution date.
+  - Expense E paid by someone else, P not in the split: NOT exported.
+  - Settlement S where P paid amount A: one row, amount = +A, date = S.date.
+  - Settlement S where P received amount A: one row, amount = -A, date = S.date.
+
+The two modes are mutually exclusive within a single export: each invocation
+of the export action produces exactly one file in exactly one mode.
+<<<
+RATIONALE: >>>
+Two modes are needed because the two natural ways to consume SplitClone data
+in a personal finance app require different shapes of data:
+  (a) Reconcile against P's real bank/card account: cash basis, because that
+      is what the bank statement also shows.
+  (b) Track the shared ledger as a separate virtual sub-account: share
+      basis, because each joint expense should debit the virtual account by
+      P's share (driving its balance negative when P consumes without
+      paying) and each settlement should bring it back toward zero.
+Both projections are pure functions of the same event log, so providing both
+costs little and covers the two main user workflows. The MVP defaults the
+mode selector to Mode A (cash) for new users; the most recently chosen mode
+shall be remembered per device.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-EXR-4
+TITLE: CSV export format
+STATEMENT: >>>
+The MVP shall produce a UTF-8 encoded CSV file with a single header row and
+the following columns, in this order:
+  1. Date            - ISO-8601 calendar date (YYYY-MM-DD)
+  2. Description     - Expense title for expense rows; "Settlement to <name>" or "Settlement from <name>" for settlement rows
+  3. Amount          - Signed decimal with two fractional digits, period decimal separator, no thousands separator. Positive = inflow to selected participant, negative = outflow.
+  4. Currency        - ISO 4217 currency code, taken from the ledger (SC-FR-EXP-2)
+  5. Counterparty    - For expense rows: comma-separated display names of the OTHER participants in the split (i.e. those who owe a share). For settlement rows: the display name of the other participant.
+  6. Labels          - Semicolon-separated list of label display names attached to the source expense; empty for settlement rows.
+  7. Note            - The expense note (SC-FR-EXP-3), with embedded CR/LF characters replaced by single spaces; empty for settlement rows.
+  8. ExpenseUUID     - The stable expense or settlement UUID, so re-exports can be deduplicated by the importing tool.
+Field values shall be RFC 4180 quoted (double quotes, doubled internally)
+when they contain commas, double quotes, or newlines.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-EXR-5
+TITLE: Active filters applied to export
+STATEMENT: >>>
+The export shall honour any execution-date range filter (SC-FR-HIS-5) and
+label filter (SC-FR-HIS-4) that is active in the UI at the moment the export
+is initiated, so the user can scope an export to a single month, trip, or
+label set.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-EXR-6
+TITLE: File delivery in the browser
+STATEMENT: >>>
+The generated CSV file shall be delivered to the user via a browser
+download triggered from a Blob object and an anchor element carrying the
+"download" attribute. Where the Web Share API with file support is
+available (notably iOS Safari 15+), the app may additionally offer "Share
+via..." to route the file into the OS share sheet (Mail, Files,
+third-party apps).
+
+The default filename shall follow the pattern
+"splitclone_<ledger-slug>_<participant-slug>_<mode>_<YYYYMMDD-HHMMSS>.csv",
+where <mode> is "cash" for Mode A and "virtual" for Mode B (see
+SC-FR-EXR-3). Including the mode in the filename prevents users from
+accidentally importing the wrong projection into the wrong account.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-EXR-7
+TITLE: No import in MVP
+STATEMENT: >>>
+The MVP shall not support importing data from external finance apps, bank
+statements (CSV, MT940, CAMT.053), or other SplitClone instances. Data flow
+between SplitClone and other tools is one-way (export only) in the MVP.
+<<<
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Sync
+
+[REQUIREMENT]
+UID: SC-FR-SYN-1
+TITLE: Background sync
+STATEMENT: >>>
+The app shall pull remote changes from the shared folder whenever it is
+opened or brought to the foreground, and shall push local changes to the
+shared folder within 10 seconds of the user committing them, network
+permitting.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-SYN-2
+TITLE: Manual sync
+STATEMENT: >>>
+The app shall expose a manual "sync now" control that forces an immediate
+pull and push cycle.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-SYN-3
+TITLE: Sync status indication
+STATEMENT: >>>
+The app shall display a clear indicator of the current sync state: in sync,
+syncing, offline, or sync error (with the error reason).
+<<<
+
+[[/SECTION]]
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Storage and Sync Architecture
+
+[TEXT]
+STATEMENT: >>>
+This section captures architectural requirements that constrain how the
+shared state is stored. They exist to make the design tractable on top of a
+consumer file-sync service that offers no atomic multi-writer primitives.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-PRV-1
+TITLE: Shared folder provider abstraction
+STATEMENT: >>>
+All access to the shared storage shall go through an internal
+"SharedFolderProvider" interface. The interface shall be defined narrowly
+enough that multiple OneDrive back-ends (Microsoft Graph API; iOS Files /
+Document Picker) and future non-OneDrive back-ends (iCloud Drive, Dropbox,
+etc.) can coexist as independent implementations selectable at runtime,
+with no changes required in the rest of the app when a new back-end is
+added.
+<<<
+RATIONALE: >>>
+Decided during requirements review: keep the door open for both Microsoft
+Graph API and the iOS Files picker without committing to one in the spec.
+Confirmed in a later iteration: both shall be shipped in the MVP where the
+host platform permits (see SC-ARC-PRV-3).
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-PRV-3
+TITLE: Microsoft Graph OneDrive provider (MVP)
+STATEMENT: >>>
+The MVP shall ship exactly one SharedFolderProvider implementation: a
+Microsoft Graph API provider that authenticates the user via OAuth 2.0
+(Authorization Code with PKCE) and accesses the ledger folder directly
+through the Graph REST API. ETags returned by Graph shall be used to
+implement the conditional-write precondition in SC-ARC-PRV-2.
+
+The iOS Files / Document Picker provider that was considered alongside
+Graph API in earlier drafts is not buildable in a web app and is
+explicitly removed from MVP scope.
+<<<
+RATIONALE: >>>
+Recorded as the direct consequence of Q7's web-app resolution: a browser
+SPA cannot integrate with the iOS Files app the way a native app can, so
+the dual-provider plan collapses to Graph-only. If the project later
+migrates to a native app (see Roadmap), the dropped provider can be
+revived under the same SharedFolderProvider interface.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: SC-ARC-PRV-1
+
+[REQUIREMENT]
+UID: SC-ARC-PRV-2
+TITLE: Required provider operations
+STATEMENT: >>>
+The SharedFolderProvider interface shall offer at minimum:
+  - List files in the ledger folder (with last-modified timestamps and ETags or equivalent)
+  - Read a file by name
+  - Create or replace a file by name, with an optional precondition (ETag / If-Match)
+  - Delete a file by name
+All operations shall be asynchronous and shall report transport errors
+distinctly from semantic errors.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-LOG-1
+TITLE: Append-only per-device event logs
+STATEMENT: >>>
+The authoritative state of a ledger shall be expressed as the union of
+per-device, append-only event logs stored in the ledger folder. Each device
+shall write only to log files that it owns (named with that device's UUID,
+see SC-ARC-LOG-4). No device shall ever write to another device's log
+files.
+<<<
+RATIONALE: >>>
+This is the central design rule that lets us survive OneDrive's lack of
+atomic multi-writer semantics. Because no two devices ever write the same
+file, the provider never has to merge concurrent edits and never produces
+"filename-DESKTOP-XYZ" conflict copies for the data files.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-LOG-2
+TITLE: Event types
+STATEMENT: >>>
+The event log shall support at minimum the following event types:
+  - LedgerRenamed (changes the ledger's human-readable name; sensitive content lives here, not in the plaintext metadata file - see SC-FR-LED-3)
+  - ParticipantAdded
+  - ParticipantRenamed
+  - ParticipantClaimed (binds a device UUID to a participant UUID)
+  - LabelCreated
+  - LabelRenamed
+  - LabelDeleted (tombstone)
+  - ExpenseCreated (payload includes execution date, entry timestamp, and label UUID list)
+  - ExpenseUpdated (carries a full new version of the expense, including its label UUID list)
+  - ExpenseDeleted (tombstone)
+  - SettlementRecorded
+  - SettlementDeleted (tombstone)
+Each event shall carry: event UUID, event type, author device UUID, author
+participant UUID, wall-clock timestamp (which is the entry timestamp for
+expense events), schema version, and a type-specific payload.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-LOG-3
+TITLE: Event log file format
+STATEMENT: >>>
+Event log segment files shall be UTF-8 encoded JSON Lines (one JSON object
+per line, no trailing comma, newline-terminated). Files shall be
+append-only: existing lines shall never be modified or removed, only new
+lines appended. No compression shall be applied; segments are stored as
+plain UTF-8 text.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-LOG-4
+TITLE: Segmented per-device logs
+STATEMENT: >>>
+Each device's event log shall be split across one or more segment files in
+the ledger folder. Segment files shall be named
+"events/<device-uuid>/<segment-open-timestamp>.jsonl", where the timestamp
+is the UTC instant the segment was opened, formatted as
+"YYYYMMDDTHHMMSSsss" (millisecond precision) so that lexicographic file
+ordering matches chronological order.
+
+A device shall have at most one "open" segment per ledger at any time; all
+other segments belonging to that device are "closed" and immutable. New
+events are appended to the open segment. When the open segment's size on
+disk would exceed the segment size threshold (SC-ARC-LOG-5) after writing
+the next event, the device shall:
+  1. Close the current segment (no further writes to it, ever).
+  2. Open a new segment with the current UTC timestamp as its filename.
+  3. Append the new event to the new segment.
+
+A device's full event log is reconstructed by reading every segment file
+under that device's folder, sorted by filename. The concatenation is the
+device's complete, append-only history.
+<<<
+RATIONALE: >>>
+OneDrive (both via Graph API and via the Files / Document Picker) has no
+"append to file" primitive. Every write rewrites the whole file. Without
+segmentation, the cost of adding a single expense grows linearly with the
+total log size, becoming user-visible after a few years of use on poor
+mobile connections.
+
+Segmentation caps the per-append upload at one segment's worth of bytes,
+keeping write latency bounded regardless of the ledger's age.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-LOG-5
+TITLE: Segment size threshold
+STATEMENT: >>>
+The segment size threshold shall be 1 MiB (1,048,576 bytes) for the MVP.
+
+This value is a configurable constant in the implementation, not a wire
+format invariant: a device that uses a different threshold remains fully
+interoperable with devices using the MVP value, because every device folds
+all segments regardless of how their boundaries were drawn.
+<<<
+RATIONALE: >>>
+At an average event size of ~1 KB this yields roughly ~1000 events per
+segment, which corresponds to ~1-2 years of activity for an active ledger
+and ~5 years for a quiet one - so segment count stays low even over the
+long term. 1 MiB uploads in ~1-3 seconds on LTE and ~10 seconds in
+worst-case cellular conditions, which is comfortably within the
+"committed write" UX budget. Round power-of-two value chosen for
+simplicity.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: SC-ARC-LOG-4
+
+[REQUIREMENT]
+UID: SC-ARC-LOG-6
+TITLE: No compaction, no compression, no data loss
+STATEMENT: >>>
+The MVP shall not implement any form of log compaction, snapshotting, or
+compression that would reduce or transform historical event data:
+  - Closed segments shall be retained verbatim for the lifetime of the
+    ledger. They shall never be merged, rewritten, or deleted by the app.
+  - Tombstone events (ExpenseDeleted, SettlementDeleted, LabelDeleted)
+    shall remain in the log alongside the events they tombstone.
+  - No segment shall be compressed (gzip, zstd, etc.) at rest.
+  - The derived-state cache (SC-ARC-CCH-1) is a performance optimisation
+    only; it shall be reconstructible at any time by folding all segments
+    from scratch.
+
+The full event history is the source of truth and shall remain forensically
+reconstructible from the segment files alone.
+<<<
+RATIONALE: >>>
+Explicit product decision: data preservation outweighs storage efficiency.
+The expected lifetime data volume per ledger (a few tens of MiB over
+decades, see SC-ARC-LOG-5 rationale) is small enough that compaction or
+compression buys nothing meaningful but introduces irreversibility risks
+(a buggy compaction could lose audit trail forever) that the project
+explicitly refuses to accept.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-MRG-1
+TITLE: Deterministic merge
+STATEMENT: >>>
+The derived ledger state shall be computed by folding all event log files in
+a deterministic order (events sorted by wall-clock timestamp, breaking ties
+by event UUID lexicographic order). Given the same set of event log files,
+all devices shall compute the same derived state.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-MRG-2
+TITLE: Last-write-wins on conflicting edits
+STATEMENT: >>>
+If two devices independently issue ExpenseUpdated events targeting the same
+expense, the event with the later wall-clock timestamp shall win in the
+derived state. Ties shall be broken by event UUID lexicographic order. The
+loser's event shall remain in the log for auditability.
+<<<
+RATIONALE: >>>
+Stronger semantics (operational transform, true CRDT field-level merging)
+are out of scope for the MVP. Last-write-wins is acceptable because expense
+records are small and concurrent edits to the same expense are expected to
+be rare.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-CCH-1
+TITLE: Local derived-state cache
+STATEMENT: >>>
+Each device shall maintain a local cache of the derived ledger state and
+of the per-segment read offsets (or hashes) used during the last fold.
+Re-syncing shall only re-read segments whose remote state has changed, and
+within a changed segment shall only fold the new tail. Closed segments
+(SC-ARC-LOG-4) are immutable, so once their hash has been recorded they
+shall not be re-fetched again.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-IDN-1
+TITLE: Device identity
+STATEMENT: >>>
+On first launch the app shall generate a random version-4 UUID and persist
+it in browser IndexedDB under the app's origin. This UUID shall be the
+device's identity across all ledgers and shall not leave the device
+except as the directory name of that device's log-segment folder inside
+each shared OneDrive folder (SC-ARC-LOG-4).
+
+If the IndexedDB record is lost (browser data cleared, private-browsing
+session, iOS Safari long-disuse eviction, fresh browser install), a new
+device UUID shall be generated on the next launch. The user shall be
+prompted to claim a participant identity again as if it were a new device
+(SC-FR-PRT-2). The previous device's log segments in the shared folder
+remain valid history and shall continue to contribute to the derived
+state; they simply receive no further appends.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-IDN-2
+TITLE: No reliance on provider identity for authorship
+STATEMENT: >>>
+The system shall not rely on the shared folder provider's identity model
+(e.g. OneDrive user account) to identify the author of an event. Authorship
+shall be established entirely by the device UUID and the claimed participant
+UUID inside the event payload.
+<<<
+RATIONALE: >>>
+The same OneDrive account may be used by multiple household members on
+different devices. Decoupling event authorship from the provider identity
+keeps the model correct in that case.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-HST-1
+TITLE: Static-asset hosting and zero backend
+STATEMENT: >>>
+The app code (HTML, CSS, JavaScript, manifest, icons, Service Worker)
+shall be distributed as immutable static assets from a third-party static
+hosting provider. The current target is GitHub Pages; equivalent
+alternatives such as Cloudflare Pages, Netlify, or any S3-equivalent
+object store are acceptable substitutes. The choice of host shall not
+require code changes; only the deployment URL changes.
+
+The project shall not operate any application server, database server,
+job queue, or other persistent backend infrastructure. All ledger state
+lives exclusively in (a) per-user OneDrive folders, accessed via Graph
+(SC-ARC-PRV-3), and (b) per-device browser storage (SC-ARC-IDN-1,
+SC-NFR-SEC-2).
+<<<
+RATIONALE: >>>
+This is the architectural commitment behind Q7's web-app decision:
+zero server cost, zero data-residency liability for the project, and a
+trust model in which only Microsoft (OneDrive) and the static host
+(GitHub or equivalent) sit between the user and their data. The static
+host sees only standard web-access metadata - never the ledger contents -
+because the JavaScript runs entirely in the user's browser and talks to
+Graph directly.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-HST-2
+TITLE: Verifiable build
+STATEMENT: >>>
+The static bundle deployed to the hosting provider shall be reproducible
+from a public source repository. The repository shall include the build
+configuration, dependency lockfiles, and a release procedure that pins
+the exact commit deployed for each released version. Subresource Integrity
+(SRI) hashes shall be used on all script and style tags whose contents
+are loaded from the static host, so a tampered asset is detected and
+refused by the browser.
+<<<
+RATIONALE: >>>
+The host-trust threat in SC-NFR-SEC-2 (CDN compromise pushes malicious
+JS that steals OAuth tokens or the data key) is mitigated by giving
+anyone the ability to verify that the served bundle matches the public
+source. SRI further ensures a silently-modified asset cannot execute in
+the browser.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-ENC-1
+TITLE: Per-ledger data key
+STATEMENT: >>>
+Every ledger created by the MVP shall be encrypted. At ledger creation
+the device shall generate a fresh random 256-bit AES key (the "data key")
+using the browser's cryptographically secure random number generator
+(crypto.getRandomValues). The data key shall never be transmitted to or
+stored on the shared folder provider in any form. It shall exist only
+in volatile memory on devices that have joined the ledger and in
+IndexedDB on those same devices (see SC-ARC-ENC-5).
+
+The MVP shall not offer an "unencrypted ledger" option. Encryption is
+mandatory.
+<<<
+RATIONALE: >>>
+Two reasons for making it mandatory rather than optional:
+  - Two formats (encrypted and plaintext) doubles the code paths in the
+    storage layer for negligible benefit; the encryption cost is small.
+  - A user opting out of encryption is almost always doing so by accident
+    or under-estimation of the threat; the default should be the safer
+    one and there is no compelling case for the unsafer alternative.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-ENC-2
+TITLE: Authenticated encryption of event-log segments
+STATEMENT: >>>
+Every event-log segment file (SC-ARC-LOG-4) shall be encrypted with
+AES-256-GCM using the ledger's data key. The on-disk file format for an
+encrypted segment shall be:
+  - 12 bytes: a freshly-generated random IV (nonce)
+  - N bytes: the GCM ciphertext, where N equals the plaintext JSONL length
+  - 16 bytes: the GCM authentication tag
+
+A fresh IV shall be generated for every encryption operation, including
+every re-upload of the same logical segment after an append. Random 96-bit
+IVs are acceptable because the collision probability over the lifetime of
+any realistic ledger is negligible.
+
+Decryption shall fail loudly on auth-tag mismatch. A segment that fails
+to decrypt shall be reported as an error to the user, never silently
+skipped, because it indicates either a wrong key, a corrupted file, or
+tampering.
+
+No plaintext segment file shall ever leave the device.
+<<<
+RATIONALE: >>>
+AES-256-GCM is authenticated encryption: confidentiality plus integrity
+in a single primitive, available natively in every modern browser via
+crypto.subtle. Encrypting whole segments (rather than individual JSONL
+lines or individual fields) is the simplest layering: the storage codec
+wraps the existing fold algorithm and the rest of the system stays
+oblivious to the fact that data is encrypted.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: SC-ARC-LOG-4
+
+[REQUIREMENT]
+UID: SC-ARC-ENC-3
+TITLE: Plaintext metadata and key fingerprint
+STATEMENT: >>>
+The ledger metadata file (SC-FR-LED-3) shall remain plaintext so that a
+joining device can identify the folder as a SplitClone ledger before
+holding the key. The metadata file shall include a "key fingerprint":
+the lowercase hexadecimal representation of the first 16 bytes of
+SHA-256(data_key).
+
+When a user enters a join code, the app shall compute the fingerprint of
+the imported key and compare it to the stored fingerprint. A mismatch
+indicates a wrong join code and shall be reported as such; the key shall
+not be persisted in IndexedDB until the fingerprint matches.
+
+The truncated SHA-256 does not reveal the key (256-bit input space, only
+128 bits of output displayed) and is short enough to log or display in
+diagnostics if needed.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-ENC-4
+TITLE: Join codes for key distribution
+STATEMENT: >>>
+The app shall allow any device that already holds the data key to display
+the key as a join code in two interchangeable forms:
+  (a) A QR code suitable for camera scanning device-to-device.
+  (b) A base64url-encoded string with a 4-character truncated-SHA-256
+      checksum appended (so typos are detected before the fingerprint
+      check in SC-ARC-ENC-3).
+
+A device that has not yet joined a ledger shall accept the join code via
+either form (scan-to-camera or paste). On successful import, the
+fingerprint check (SC-ARC-ENC-3) shall pass before the key is persisted.
+
+The join code shall never be transmitted by the app to any network
+endpoint. It shall be communicated between users entirely out-of-band
+(messaging app, in-person QR scan, etc.). The app shall include a clear
+in-UI warning that the join code grants full access to the ledger's
+contents and shall be shared only over a channel the user trusts.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-ENC-5
+TITLE: Local key storage
+STATEMENT: >>>
+Once a device has imported a data key, the key shall be persisted in
+IndexedDB under the app's origin, scoped to the ledger UUID. Where the
+browser supports it, the key shall be imported as a non-extractable
+CryptoKey via crypto.subtle.importKey so that crypto.subtle.exportKey on
+the resulting object fails. The decryption and encryption operations
+continue to work with non-extractable keys; only direct read-out of the
+raw key material is prevented.
+
+If the IndexedDB record holding the key is lost (browser data cleared,
+private-browsing session, iOS Safari long-disuse eviction, fresh browser
+install), the device shall be unable to read the ledger and the user
+shall be required to re-enter the join code.
+<<<
+RATIONALE: >>>
+Non-extractable CryptoKey is a meaningful defence-in-depth: a casual XSS
+or a developer mistake that exfiltrates "everything in IndexedDB" will
+get an opaque key handle, not the raw 32 bytes. It is not a defence
+against a fully-compromised app bundle (the malicious script can still
+encrypt/decrypt with the key on the device's behalf) - that threat is
+addressed by SC-ARC-HST-2.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-ENC-6
+TITLE: Recovery-code backup prompt
+STATEMENT: >>>
+Immediately after creating a ledger, and on every subsequent session
+until acknowledged, the app shall prominently prompt the user to save
+the join code as a recovery code in a safe place (their password
+manager, a downloaded file, a printed copy). The prompt shall remain
+visible until the user explicitly confirms they have saved it.
+
+The app shall make it easy to:
+  - Reveal the current data key as a join code on demand from a joined
+    device.
+  - Download the join code as a small text file.
+  - Copy the join code to the clipboard.
+The user shall be able to re-display the prompt at any later time from
+the ledger settings.
+<<<
+RATIONALE: >>>
+The realistic single point of failure for an encrypted ledger is "every
+device that ever held the key has since cleared its storage". A pushy
+recovery-code prompt at the moment the key first exists, plus an easy
+on-demand re-display, is the standard mitigation. It accepts a small UX
+nag in exchange for avoiding the worst-case "ledger irretrievably lost"
+outcome.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-ENC-7
+TITLE: No key rotation or member revocation in MVP
+STATEMENT: >>>
+The MVP shall not support data-key rotation, re-encrypting existing
+segments under a new key, or revoking a member's access to an existing
+ledger. A user who needs to revoke a former member shall be advised, via
+in-UI guidance, to create a new ledger and re-enter the relevant expense
+history manually (or by exporting and re-importing, when the relevant
+import feature exists - see Roadmap).
+<<<
+RATIONALE: >>>
+Revocation requires either re-encrypting all closed segments under a new
+key (which violates the "closed segments are immutable" rule in
+SC-ARC-LOG-4) or moving to a per-member envelope-encryption scheme
+(Option C in the design discussion). Both are large complications for a
+case that, in a 2-10-person trusted-group ledger, is rare. Deferring is
+the right MVP trade.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-FMT-1
+TITLE: Scope of "file format"
+STATEMENT: >>>
+The "file format" of a SplitClone ledger comprises every layout that the
+app reads from or writes to non-volatile storage shared with users or
+external tools. Specifically:
+  (a) The plaintext metadata file structure (SC-FR-LED-3).
+  (b) The event-log segment directory layout and filename pattern (SC-ARC-LOG-4).
+  (c) The encrypted segment envelope (IV / ciphertext / GCM tag, SC-ARC-ENC-2).
+  (d) The plaintext JSONL event schema inside a segment, including the payload schema of every event type (SC-ARC-LOG-2).
+  (e) The join-code encoding, in both QR and base64url-with-checksum forms (SC-ARC-ENC-4).
+  (f) The CSV export schema (SC-FR-EXR-4).
+
+A single monotonically increasing integer schema version (declared in the
+metadata file, SC-FR-LED-3) shall identify the current snapshot of the
+format as a whole. A change to any of (a) - (f) requires incrementing the
+schema version.
+
+The local browser-side caches (IndexedDB layout, derived-state cache
+structure) are NOT part of the file format. They are private to a single
+device and may evolve freely as long as the user-visible behaviour is
+preserved.
+<<<
+RATIONALE: >>>
+Drawing the line precisely matters because the rules in SC-ARC-FMT-2 and
+SC-ARC-FMT-3 hinge on what counts as "the format". Anything visible to
+another device or to an external tool counts; anything purely local does
+not.
+<<<
+
+[REQUIREMENT]
+UID: SC-ARC-FMT-2
+TITLE: Schema version handling
+STATEMENT: >>>
+On reading a ledger, a device shall compare the schema version declared
+in the metadata file (the "ledger version") against the highest schema
+version it has been built to understand (the "device version"):
+
+  - If ledger version > device version: the device shall refuse to fold,
+    read, or write to the ledger. It shall display a clear error
+    explaining that the ledger was written by a newer version of the app
+    and shall suggest the user update the app. It shall not attempt
+    partial reads or "best effort" parsing.
+
+  - If ledger version == device version: normal operation.
+
+  - If ledger version < device version: the device shall read all events
+    and segments and shall perform any necessary upgrades to the older
+    schemas in memory only. New events shall continue to be written at
+    the ledger's current schema version (i.e. the older version), so
+    that other devices still on the older app continue to participate.
+
+The ledger version shall never be incremented implicitly. Promoting a
+ledger to a newer schema version shall be an explicit user action
+("Upgrade ledger format") that re-confirms compatibility implications
+and warns that older devices will stop being able to read the ledger
+until they update.
+
+Closed segments (SC-ARC-LOG-6) shall never be rewritten to convert their
+schema version. Schema upgrades apply to new events going forward, not
+to history.
+<<<
+RATIONALE: >>>
+"Refuse loudly when reading a newer version" is the safe default: a
+half-understanding device might silently corrupt structure it does not
+fully comprehend. "Continue writing at the ledger's version when the
+device is newer" is the rule that lets a group upgrade their phones one
+at a time without breaking the ledger for everyone else.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: SC-ARC-FMT-1
+
+[REQUIREMENT]
+UID: SC-ARC-FMT-3
+TITLE: Stability commitment post-v1.0
+STATEMENT: >>>
+Once SplitClone reaches its v1.0 release, the file format defined in
+SC-ARC-FMT-1 shall be treated as stable. After v1.0:
+
+  - Any proposed change to the file format requires explicit, recorded
+    approval from the project owner before implementation begins. Format
+    changes shall not be introduced as part of unrelated work or as a
+    side effect of refactoring.
+  - The project shall maintain a written, public changelog that
+    enumerates every defined schema version, the changes between
+    consecutive versions, and the in-memory migration logic that an
+    upgraded device applies when reading the older version.
+  - Schema-version increments shall be infrequent and shall batch
+    related changes together where possible, rather than incrementing
+    repeatedly for small additions.
+
+Before v1.0, the format may evolve more freely, but every change shall
+still be a deliberate decision and shall update the changelog.
+<<<
+RATIONALE: >>>
+Captured as an explicit requirement because user data lives in user-owned
+OneDrive folders that the project does not control. Once that data
+exists, changing the format silently or casually risks rendering
+real ledgers unreadable or, worse, subtly corrupted. The cost of
+discipline here is paid in slightly slower velocity for format changes;
+the benefit is that users' historical data remains readable for the
+lifetime of the project.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: SC-ARC-FMT-1
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Non-Functional Requirements
+
+[REQUIREMENT]
+UID: SC-NFR-PLT-1
+TITLE: Browser platform (MVP)
+STATEMENT: >>>
+The MVP shall be a Progressive Web App running in modern evergreen
+browsers, with no native iOS, Android, or desktop binary. Minimum
+supported targets are:
+  - Mobile: iOS Safari 17+ (covers iPhone and iPad), Chrome on Android 14+
+  - Desktop: current and previous major versions of Chrome, Edge, Firefox, Safari
+
+The app shall be installable to the home screen via Safari's "Add to Home
+Screen" on iOS and via the standard PWA install prompt on Chromium
+browsers, including a Web App Manifest declaring icon, name, theme
+colour, and standalone display mode.
+<<<
+RATIONALE: >>>
+Q7 was resolved in favour of a web app to avoid the Apple Developer
+Program cost and to obtain Android/iPad/desktop support for free. iPhone
+remains the primary target form factor; the others come along because the
+runtime is the browser.
+<<<
+
+[REQUIREMENT]
+UID: SC-NFR-PLT-2
+TITLE: Responsive layout
+STATEMENT: >>>
+The UI shall use a responsive layout that adapts to viewport widths from
+~320 px (smallest iPhone) up to typical desktop browser widths. iPad and
+desktop are not separate code paths; they are simply wider breakpoints of
+the same layout. The phone-portrait viewport is the design baseline; other
+breakpoints are progressive enhancements.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: SC-NFR-PLT-1
+
+[REQUIREMENT]
+UID: SC-NFR-OFF-1
+TITLE: Offline-first
+STATEMENT: >>>
+All read and write actions on the ledger shall be possible without an
+internet connection. Local changes shall be queued in IndexedDB and pushed
+to OneDrive automatically once connectivity is restored. A registered
+Service Worker shall cache the static app shell so that the app launches
+when offline.
+
+Known limitation: iOS Safari evicts PWA storage (IndexedDB and Service
+Worker caches) after extended periods of non-use (currently around 7
+weeks). Users who open the app at least every few weeks will not be
+affected; users returning after a long absence may need to re-download
+the app shell and re-authenticate. The app shall detect lost local state
+gracefully (re-fetch from OneDrive, re-prompt for OAuth) rather than
+data-loss.
+<<<
+
+[REQUIREMENT]
+UID: SC-NFR-PRF-1
+TITLE: Cold-start latency
+STATEMENT: >>>
+After cold launch with an existing local cache, the expense list shall
+render within 1 second on supported iPhone hardware. Network sync may
+complete asynchronously after the UI is interactive.
+<<<
+
+[REQUIREMENT]
+UID: SC-NFR-SEC-1
+TITLE: At-rest data
+STATEMENT: >>>
+All ledger contents inside the shared folder shall be encrypted at rest
+under a per-ledger 256-bit AES-GCM data key (see SC-ARC-ENC-1 through
+SC-ARC-ENC-7). The only plaintext file in a ledger folder shall be the
+minimal metadata file specified in SC-FR-LED-3.
+
+The shared folder provider's own access controls (folder sharing,
+permissions) remain in force and are the first line of defence; the
+at-rest encryption layer is additional protection against accidental
+over-sharing of the folder and against compromise or insider access at
+the provider level. The two layers protect against different threats and
+neither replaces the other.
+
+Members who legitimately hold the data key (every joined device) can
+read the full ledger. Encryption is not intended to compartmentalise
+access between members of the same ledger.
+<<<
+
+[REQUIREMENT]
+UID: SC-NFR-SEC-2
+TITLE: Local secrets
+STATEMENT: >>>
+Provider credentials (Microsoft Graph OAuth refresh and access tokens) and
+the device UUID shall be stored in browser-local storage scoped to the
+app's origin: IndexedDB for refresh tokens and the device UUID, in-memory
+or sessionStorage for short-lived access tokens. None of these values
+shall ever be written to the shared OneDrive folder.
+
+The MVP shall use the OAuth 2.0 Authorization Code flow with PKCE (no
+client secret), as appropriate for a public single-page application.
+Refresh tokens shall be requested with the smallest scope set that
+satisfies the SharedFolderProvider operations (SC-ARC-PRV-2).
+
+The MVP acknowledges that browser-local storage is materially weaker than
+a hardware-backed secure enclave (e.g. iOS keychain):
+  - IndexedDB contents are readable by any JavaScript executing on the same origin (XSS risk).
+  - No biometric gating is available to the browser.
+  - Browser extensions with sufficient permissions may inspect storage.
+Mitigations: a strict Content Security Policy restricting which sources
+can execute scripts; no third-party analytics or trackers (SC-NFR-PRV-1);
+keeping refresh-token lifetime as short as the OAuth provider permits;
+clearing tokens on sign-out.
+<<<
+RATIONALE: >>>
+Recorded explicitly because Q7's web-app decision is the source of this
+downgrade. Future migration to a native iOS or Android app would restore
+hardware-backed storage; the spec leaves that door open.
+<<<
+
+[REQUIREMENT]
+UID: SC-NFR-PRV-1
+TITLE: No third-party telemetry
+STATEMENT: >>>
+The app shall not send analytics, crash reports, or usage data to any third
+party. Diagnostic information shall remain on-device unless the user
+explicitly exports it.
+<<<
+
+[REQUIREMENT]
+UID: SC-NFR-LOC-1
+TITLE: Language
+STATEMENT: >>>
+The MVP shall ship with English UI text only. The codebase shall route all
+user-facing strings through an iOS localisation mechanism so that other
+languages can be added later without code changes.
+<<<
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Roadmap Beyond MVP
+
+[TEXT]
+STATEMENT: >>>
+Features that are out of MVP scope and may be revisited in a later release
+but are not currently committed:
+  - Multiple groups / multiple concurrent ledgers per user
+  - Unequal splits (by share, by percentage, by exact amount)
+  - Multi-currency expenses and FX conversion
+  - Aggregate reporting and charts by label (the MVP supports user-defined labels and filtering by label, but not totals/breakdowns)
+  - Receipt OCR and image attachments
+  - Debt simplification (re-routing payments through third parties)
+  - In-app payment integration (PayPal, Venmo, etc.)
+  - Recurring expenses
+  - Import from external finance / banking files (the MVP only exports, see SC-FR-EXR-7)
+  - Additional export formats (QIF, OFX, MT940, CAMT.053, Excel)
+  - Per-row double-entry export (one debit row + one credit row per transaction); the MVP collapses each transaction into a single signed row in both Mode A and Mode B
+  - Push notifications between users
+  - Shared-folder providers other than OneDrive (iCloud Drive, Dropbox, plain WebDAV)
+  - Native iOS / Android app, which would restore hardware-backed secure storage for both OAuth tokens (SC-NFR-SEC-2) and ledger data keys (SC-ARC-ENC-5) and would unlock the iOS Files / Document Picker provider previously envisaged in SC-ARC-PRV-3. Requires a paid Apple Developer Program subscription and is deferred until budget priorities change.
+  - Per-member envelope encryption with per-user keypairs, enabling key rotation and member revocation without rebuilding the ledger (option C in the encryption design; see SC-ARC-ENC-7).
+<<<
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Open Questions
+
+[TEXT]
+STATEMENT: >>>
+Items that the requirements deliberately leave unresolved and that the design
+phase must close before implementation:
+  - Q1: RESOLVED (2026-05-14). Following Q7's resolution in favour of a
+    web app, only the Microsoft Graph API provider is implementable and
+    is therefore the sole MVP SharedFolderProvider (SC-ARC-PRV-3). The
+    iOS Files / Document Picker provider is deferred to a potential
+    future native-app release (see Roadmap).
+  - Q2: RESOLVED (2026-05-14). No compaction, no snapshotting, no
+    compression - all historical events are kept verbatim
+    (SC-ARC-LOG-6). The performance concern around large files is
+    addressed instead by segmenting each device's log at 1 MiB
+    (SC-ARC-LOG-4 / SC-ARC-LOG-5), which caps the per-append upload cost
+    without losing data. Threshold is implementation-tunable and does not
+    affect interoperability.
+  - Q3: RESOLVED (2026-05-14). Schema-version handling is specified in
+    SC-ARC-FMT-2: refuse loudly when reading a newer version; migrate
+    in memory only when reading an older version; never rewrite closed
+    segments to change their version. The complementary governance rule
+    (any post-v1.0 format change requires explicit project-owner
+    approval) is captured in SC-ARC-FMT-3.
+  - Q4: UX for resolving the case where two users add a new participant with
+    the same display name independently (currently treated as two distinct
+    participants because UUIDs differ).
+  - Q5: Whether the per-device "last used export mode" memory (SC-FR-EXR-3)
+    should be replaced by a per-ledger or per-participant default once
+    users have a sense of how often they switch modes.
+  - Q6: Whether to ship a WISO-Mein-Geld-tuned CSV variant (semicolon
+    delimiter, comma decimal separator, possibly localised header names) in
+    addition to the generic RFC 4180 CSV defined in SC-FR-EXR-4, or whether
+    the WISO generic CSV import mapper is sufficient.
+
+  - Q7: RESOLVED (2026-05-14) - web app (PWA). The MVP is a Progressive
+    Web App distributed as static assets (SC-NFR-PLT-1, SC-ARC-HST-1).
+    The decision was driven by the desire to avoid the paid Apple
+    Developer Program; it also brings iPad, Android, and desktop support
+    for free. Accepted trade-offs are recorded in the corresponding
+    requirements:
+      - Weaker secret storage than the iOS keychain (SC-NFR-SEC-2).
+      - Trust in a static-host CDN, mitigated by a verifiable build with
+        SRI (SC-ARC-HST-2).
+      - iOS Safari PWA storage eviction after long disuse (SC-NFR-OFF-1).
+      - Loss of the iOS Files / Document Picker provider (SC-ARC-PRV-3,
+        Q1).
+    Hybrid options (Capacitor, React Native, Flutter, Tauri Mobile) were
+    considered and deferred; revisiting any of them would require a paid
+    Apple developer account for iOS distribution, which is the cost the
+    web-app choice exists to avoid.
+
+  - Q8: Pre-implementation deliverables. Before any production code is
+    written, the project shall produce and review two artefacts that the
+    current spec does not yet contain:
+
+      (a) Architecture design document. Diagrams and prose describing the
+          internal module layout (UI layer, domain model, event-log store,
+          SharedFolderProvider implementations, sync engine, export
+          engine), how data flows between them, and the threading / async
+          model. The architecture must demonstrably implement the
+          requirements in section "Storage and Sync Architecture".
+
+      (b) UI style mockups. Visual mockups of the main screens (ledger
+          list, expense list with filters, expense detail, expense entry,
+          label management, balances, settlement entry, export, sync
+          status). The mockups establish typography, colour palette,
+          spacing, iconography, dark-mode behaviour, and the iPhone
+          portrait baseline that will later be adapted to iPad (SC-NFR-PLT-2).
+
+    Review and sign-off on both artefacts is a prerequisite for starting
+    implementation. The format (Figma, hand-drawn, Markdown + Mermaid,
+    etc.) is left open.
+<<<
+
+[[/SECTION]]
