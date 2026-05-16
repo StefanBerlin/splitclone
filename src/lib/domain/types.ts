@@ -60,6 +60,8 @@ export interface Settlement extends SettlementInput {
 	id: UUID;
 	createdAt: ISOInstant;
 	createdBy: UUID;
+	lastEditedAt?: ISOInstant;
+	lastEditedBy?: UUID;
 }
 
 export interface DerivedState {
@@ -86,6 +88,7 @@ export type EventKind =
 	| 'ExpenseUpdated'
 	| 'ExpenseDeleted'
 	| 'SettlementRecorded'
+	| 'SettlementUpdated'
 	| 'SettlementDeleted';
 
 export interface EventPayloads {
@@ -100,6 +103,7 @@ export interface EventPayloads {
 	ExpenseUpdated: { expenseId: UUID; input: ExpenseInput };
 	ExpenseDeleted: { expenseId: UUID };
 	SettlementRecorded: { settlementId: UUID; input: SettlementInput };
+	SettlementUpdated: { settlementId: UUID; input: SettlementInput };
 	SettlementDeleted: { settlementId: UUID };
 }
 

@@ -3,4 +3,4 @@
 	import SettleForm from '$lib/ui/components/SettleForm.svelte';
 </script>
 
-<SettleForm ledgerId={page.params.ledgerId!} />
+<SettleForm ledgerId={page.params.ledgerId!} settlementId={page.params.settlementId!} />

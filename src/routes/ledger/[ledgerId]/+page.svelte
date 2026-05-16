@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { app } from '$lib/ui/stores/app.svelte';
 	import { listExpenses, resolveLabelNames } from '$lib/domain';
+	import type { Expense, Settlement } from '$lib/domain';
 	import { euro, dateGroupLabel } from '$lib/ui/format/format';
 
 	const ledgerId = $derived(page.params.ledgerId!);
@@ -29,35 +30,64 @@
 		to = '';
 	}
 
-	const expenses = $derived(
-		listExpenses(ledger).filter((e) => {
-			if (filterParticipant) {
-				const involved =
-					e.payerId === filterParticipant || e.splitParticipantIds.includes(filterParticipant);
-				if (!involved) return false;
+	type Row =
+		| { kind: 'expense'; date: string; tie: string; e: Expense }
+		| { kind: 'settlement'; date: string; tie: string; s: Settlement };
+
+	const rows = $derived.by<Row[]>(() => {
+		const out: Row[] = [];
+
+		for (const e of listExpenses(ledger)) {
+			if (
+				filterParticipant &&
+				e.payerId !== filterParticipant &&
+				!e.splitParticipantIds.includes(filterParticipant)
+			) {
+				continue;
 			}
 			if (activeLabels.length > 0 && !e.labelIds.some((l) => activeLabels.includes(l))) {
-				return false;
+				continue;
 			}
-			if (from && e.executionDate < from) return false;
-			if (to && e.executionDate > to) return false;
-			return true;
-		})
-	);
+			if (from && e.executionDate < from) continue;
+			if (to && e.executionDate > to) continue;
+			out.push({ kind: 'expense', date: e.executionDate, tie: e.createdAt, e });
+		}
 
-	const total = $derived(expenses.reduce((s, e) => s + e.amount, 0n));
+		// Settlements carry no labels, so a label filter excludes them.
+		if (activeLabels.length === 0) {
+			for (const s of ledger.settlements.values()) {
+				if (
+					filterParticipant &&
+					s.fromParticipantId !== filterParticipant &&
+					s.toParticipantId !== filterParticipant
+				) {
+					continue;
+				}
+				if (from && s.date < from) continue;
+				if (to && s.date > to) continue;
+				out.push({ kind: 'settlement', date: s.date, tie: s.createdAt, s });
+			}
+		}
 
-	function payerLabel(payerId: string): string {
-		if (payerId === meId) return 'you';
-		return ledger.participants.get(payerId)?.name ?? payerId;
+		return out.sort((a, b) =>
+			a.date !== b.date ? (a.date < b.date ? 1 : -1) : a.tie < b.tie ? 1 : -1
+		);
+	});
+
+	const expenseCount = $derived(rows.filter((r) => r.kind === 'expense').length);
+	const settlementCount = $derived(rows.length - expenseCount);
+	const total = $derived(rows.reduce((s, r) => (r.kind === 'expense' ? s + r.e.amount : s), 0n));
+
+	function pname(id: string): string {
+		if (id === meId) return 'you';
+		return ledger.participants.get(id)?.name ?? id;
 	}
 
-	// Group consecutive expenses by execution date for section headings.
 	const groups = $derived(
-		expenses.reduce<{ date: string; items: typeof expenses }[]>((acc, e) => {
+		rows.reduce<{ date: string; items: Row[] }[]>((acc, r) => {
 			const last = acc.at(-1);
-			if (last && last.date === e.executionDate) last.items.push(e);
-			else acc.push({ date: e.executionDate, items: [e] });
+			if (last && last.date === r.date) last.items.push(r);
+			else acc.push({ date: r.date, items: [r] });
 			return acc;
 		}, [])
 	);
@@ -94,28 +124,44 @@
 	</div>
 
 	{#if filtersActive}
-		<p class="muted">{expenses.length} expenses · {euro(total)} total</p>
+		<p class="muted">
+			{expenseCount} expenses · {euro(total)} total{#if settlementCount}
+				· {settlementCount} settlements{/if}
+		</p>
 	{/if}
 
-	{#if expenses.length === 0}
+	{#if rows.length === 0}
 		<div class="empty">
-			<p>No matching expenses.</p>
+			<p>No matching items.</p>
 			{#if filtersActive}<p>Try widening a filter above.</p>{/if}
 		</div>
 	{:else}
 		{#each groups as g (g.date)}
 			<p class="section-head">{dateGroupLabel(g.date)}</p>
-			{#each g.items as e (e.id)}
-				<a class="row" href="/ledger/{ledgerId}/expense/{e.id}">
-					<span class="grow">
-						{e.title}<br />
-						<span class="muted"
-							>paid by {payerLabel(e.payerId)} · split {e.splitParticipantIds.length} ways{#if resolveLabelNames(ledger, e).length}
-								· {resolveLabelNames(ledger, e).join(', ')}{/if}</span
-						>
-					</span>
-					<span class="amount neg">{euro(e.amount)}</span>
-				</a>
+			{#each g.items as r (r.kind + (r.kind === 'expense' ? r.e.id : r.s.id))}
+				{#if r.kind === 'expense'}
+					<a class="row" href="/ledger/{ledgerId}/expense/{r.e.id}">
+						<span class="grow">
+							{r.e.title}<br />
+							<span class="muted"
+								>paid by {pname(r.e.payerId)} · split {r.e.splitParticipantIds.length} ways{#if resolveLabelNames(ledger, r.e).length}
+									· {resolveLabelNames(ledger, r.e).join(', ')}{/if}</span
+							>
+						</span>
+						<span class="amount neg">{euro(r.e.amount)}</span>
+					</a>
+				{:else}
+					<a class="row" href="/ledger/{ledgerId}/settle/{r.s.id}/edit">
+						<span class="grow">
+							↔ Settlement<br />
+							<span class="muted"
+								>{pname(r.s.fromParticipantId)} → {pname(r.s.toParticipantId)}{#if r.s.note}
+									· {r.s.note}{/if}</span
+							>
+						</span>
+						<span class="amount">{euro(r.s.amount)}</span>
+					</a>
+				{/if}
 			{/each}
 		{/each}
 	{/if}

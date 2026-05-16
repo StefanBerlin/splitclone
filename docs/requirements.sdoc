@@ -1,7 +1,7 @@
 [DOCUMENT]
 TITLE: SplitClone - Software Requirements Specification
 UID: SC-SRS
-VERSION: 0.10 (draft)
+VERSION: 0.11 (draft)
 DATE: 2026-05-14
 PREFIX: SC-
 OPTIONS:
@@ -738,6 +738,7 @@ The event log shall support at minimum the following event types:
   - ExpenseUpdated (carries a full new version of the expense, including its label UUID list)
   - ExpenseDeleted (tombstone)
   - SettlementRecorded
+  - SettlementUpdated (carries a full new version of the settlement)
   - SettlementDeleted (tombstone)
 Each event shall carry: event UUID, event type, author device UUID, author
 participant UUID, wall-clock timestamp (which is the entry timestamp for

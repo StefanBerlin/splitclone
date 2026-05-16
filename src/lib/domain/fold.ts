@@ -109,6 +109,20 @@ function apply(state: DerivedState, ev: LedgerEvent): DerivedState {
 			});
 			return state;
 
+		case 'SettlementUpdated': {
+			const existing = state.settlements.get(ev.payload.settlementId);
+			// Same rule as ExpenseUpdated: dropped if the settlement is
+			// missing/tombstoned (a delete with an earlier ts still wins).
+			if (!existing) return state;
+			state.settlements.set(ev.payload.settlementId, {
+				...existing,
+				...ev.payload.input,
+				lastEditedAt: ev.entryAt,
+				lastEditedBy: ev.authorParticipantId
+			});
+			return state;
+		}
+
 		case 'SettlementDeleted':
 			state.settlements.delete(ev.payload.settlementId);
 			return state;

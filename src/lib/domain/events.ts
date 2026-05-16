@@ -20,6 +20,7 @@ const EVENT_KINDS: ReadonlySet<string> = new Set<EventKind>([
 	'ExpenseUpdated',
 	'ExpenseDeleted',
 	'SettlementRecorded',
+	'SettlementUpdated',
 	'SettlementDeleted'
 ]);
 

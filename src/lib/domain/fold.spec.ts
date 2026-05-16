@@ -140,3 +140,55 @@ describe('tombstones and provenance', () => {
 		expect(anna.claimedByDeviceId).toBe('dev-1');
 	});
 });
+
+describe('SettlementUpdated (parity with ExpenseUpdated)', () => {
+	const rec = ev('SettlementRecorded', {
+		settlementId: 's1',
+		input: {
+			fromParticipantId: 'p-lukas',
+			toParticipantId: 'p-anna',
+			amount: 1573n,
+			date: '2026-05-13'
+		}
+	});
+
+	it('a later update replaces the settlement and stamps lastEdited', () => {
+		const upd = ev(
+			'SettlementUpdated',
+			{
+				settlementId: 's1',
+				input: {
+					fromParticipantId: 'p-lukas',
+					toParticipantId: 'p-anna',
+					amount: 1600n,
+					date: '2026-05-13',
+					note: 'corrected'
+				}
+			},
+			{ id: 'u1', entryAt: instant(40) }
+		);
+		const s = fold([rec, upd]).settlements.get('s1');
+		expect(s?.amount).toBe(1600n);
+		expect(s?.note).toBe('corrected');
+		expect(s?.createdAt).toBe(rec.entryAt); // provenance preserved
+		expect(s?.lastEditedAt).toBe(instant(40));
+	});
+
+	it('an update to a deleted settlement is dropped (delete wins)', () => {
+		const del = ev('SettlementDeleted', { settlementId: 's1' }, { id: 'd1', entryAt: instant(20) });
+		const upd = ev(
+			'SettlementUpdated',
+			{
+				settlementId: 's1',
+				input: {
+					fromParticipantId: 'p-lukas',
+					toParticipantId: 'p-anna',
+					amount: 9999n,
+					date: '2026-05-13'
+				}
+			},
+			{ id: 'u1', entryAt: instant(30) }
+		);
+		expect(fold([rec, del, upd]).settlements.has('s1')).toBe(false);
+	});
+});
