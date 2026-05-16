@@ -27,6 +27,14 @@ deliberate, not accidental.
 
 ### Change log within v1 (development)
 
+- 2026-05-17 — Defined the on-disk ledger folder layout (SC-ARC-FMT-1 items
+  (a) + (b), SC-FR-LED-3, SC-ARC-LOG-4): a ledger folder contains a plaintext
+  `ledger.json` (`ledgerId`, `schemaVersion`, `createdAt`, `encrypted:true`,
+  `keyFingerprint` — and deliberately nothing sensitive) plus
+  `events/<deviceId>/<openInstant>.jsonl.enc` sealed segment files. First
+  definition within schema v1, not a change to a shipped format → no version
+  bump. Not file format: the IndexedDB `remoteEtag`/`root` sync bookkeeping
+  (private per-device cache, SC-ARC-FMT-1).
 - 2026-05-17 — Defined the encrypted segment envelope (SC-ARC-FMT-1 item (c),
   SC-ARC-ENC-2): `[12-byte random IV ‖ AES-256-GCM ciphertext ‖ 16-byte tag]`,
   one fresh IV per seal. Also fixed the join-code encoding (SC-ARC-FMT-1 item

@@ -1,10 +1,14 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { app } from '$lib/ui/stores/app.svelte';
 	import type { JoinCodePreview } from '$lib/ui/stores/app.svelte';
 
 	let code = $state('');
 	let checking = $state(false);
 	let result = $state<JoinCodePreview | undefined>();
+	let joinError = $state('');
+
+	const canJoinRemote = $derived(app.oneDriveConfigured && app.connected);
 
 	async function check() {
 		if (!code.trim() || checking) return;
@@ -12,6 +16,19 @@
 		result = undefined;
 		try {
 			result = await app.previewJoinCode(code);
+		} finally {
+			checking = false;
+		}
+	}
+
+	async function joinRemote() {
+		if (!code.trim() || checking) return;
+		checking = true;
+		joinError = '';
+		try {
+			const r = await app.joinViaOneDrive(code);
+			if (r.ok && r.ledgerId) goto(`/ledger/${r.ledgerId}`);
+			else joinError = r.error ?? 'Could not join.';
 		} finally {
 			checking = false;
 		}
@@ -37,9 +54,30 @@
 		<input bind:value={code} placeholder="SC1.…" autocomplete="off" spellcheck="false" />
 	</label>
 
-	<button class="btn btn-primary btn-block" onclick={check} disabled={!code.trim() || checking}>
-		{checking ? 'Checking…' : 'Validate code'}
-	</button>
+	{#if canJoinRemote}
+		<button
+			class="btn btn-primary btn-block"
+			onclick={joinRemote}
+			disabled={!code.trim() || checking}
+		>
+			{checking ? 'Joining…' : 'Join from OneDrive'}
+		</button>
+		<button
+			class="btn btn-block"
+			style="margin-top:var(--space-2)"
+			onclick={check}
+			disabled={!code.trim() || checking}
+		>
+			Validate only
+		</button>
+		{#if joinError}
+			<div class="card danger">✗ {joinError}</div>
+		{/if}
+	{:else}
+		<button class="btn btn-primary btn-block" onclick={check} disabled={!code.trim() || checking}>
+			{checking ? 'Checking…' : 'Validate code'}
+		</button>
+	{/if}
 
 	{#if result?.ok}
 		<div class="card ok">
@@ -50,13 +88,18 @@
 		<div class="card danger">✗ {result.error}</div>
 	{/if}
 
-	<div class="card">
-		Fetching and decrypting the shared ledger from OneDrive (and the fingerprint check against the
-		ledger's metadata, SC-ARC-ENC-3) is wired up in Phase 6. This screen currently confirms only
-		that the code is well-formed and shows which key it carries — see <code
-			>docs/mockups/11-join-ledger.md</code
-		> for the full intended flow (QR scan, fingerprint check, participant claim).
-	</div>
+	{#if !app.oneDriveConfigured}
+		<div class="card">
+			OneDrive is not configured in this build, so this screen only validates the code locally. With
+			OneDrive enabled and connected, joining scans folders shared with your account and adopts the
+			one whose metadata fingerprint matches (SC-ARC-ENC-3).
+		</div>
+	{:else if !app.connected}
+		<div class="card">
+			<a href="/auth/start">Connect OneDrive</a> to actually join a shared ledger. The owner must have
+			shared its folder with your Microsoft account first.
+		</div>
+	{/if}
 </div>
 
 <style>

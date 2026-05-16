@@ -19,7 +19,7 @@ they are wired together at runtime → build/deploy.
 | App framework | **SvelteKit** + TypeScript | Smallest compiled bundles for a PWA cold-start, reactive without virtual-DOM overhead, native TS, good PWA tooling. Decided 2026-05-14. |
 | Build / dev | Vite (bundled with SvelteKit) | Default; no reason to deviate. |
 | Crypto | Browser-native `crypto.subtle` (WebCrypto) | Required by SC-ARC-ENC-2; no third-party crypto library. |
-| Microsoft Graph | `@microsoft/microsoft-graph-client` + custom auth provider | Standard SDK; thin wrapper around `fetch`. |
+| Microsoft Graph | Hand-rolled `fetch` (no SDK) — **revised in Phase 6** | The SDK adds weight for the ~4 endpoints we use (children, content GET/PUT, delete, sharedWithMe); consistent with the no-MSAL / hand-rolled-IDB anti-dependency posture. Scope is `Files.ReadWrite` (not AppFolder) so a folder one user owns+shares is reachable by others via "shared with me" — true multi-user (decided with the project owner). |
 | OAuth | Hand-rolled PKCE flow (no MSAL.js) | MSAL.js is large and opinionated; PKCE is ~150 lines for what we need (SC-NFR-SEC-2). Re-evaluate if scope grows. |
 | QR | `qr-creator` (pure JS, no canvas dependency) for generation; `barcode-detector` shim or `@zxing/browser` for scan | Only loaded on the join-code screens (code-split). |
 | Local storage | IndexedDB via a thin custom wrapper | Avoids Dexie/idb-keyval bundle cost; our access patterns are simple. |

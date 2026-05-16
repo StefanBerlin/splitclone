@@ -87,7 +87,37 @@
 	</div>
 
 	<p class="section-head">Sync</p>
-	<p>☁ In sync — local demo data (no network until Phase 6).</p>
+	{#if !app.oneDriveConfigured}
+		<p class="muted" style="font-size:13px">
+			OneDrive is not configured in this build. The ledger lives only in this browser. See
+			<code>.env.example</code> to enable cloud sync.
+		</p>
+	{:else if !app.connected}
+		<p class="muted" style="font-size:13px">
+			Not connected. Connect OneDrive to sync this ledger across devices and share it with others.
+		</p>
+		<a class="btn btn-primary btn-block" href="/auth/start">☁ Connect OneDrive</a>
+	{:else}
+		<p>
+			{#if app.syncState === 'syncing'}
+				⏳ Syncing…
+			{:else if app.syncState === 'error'}
+				⚠ Sync error: <span class="muted">{app.syncError}</span>
+			{:else}
+				☁ Connected.
+			{/if}
+		</p>
+		<button
+			class="btn btn-block"
+			onclick={() => app.syncNow(ledgerId)}
+			disabled={app.syncState === 'syncing'}
+		>
+			Sync now
+		</button>
+		<button class="btn btn-block" style="margin-top:var(--space-2)" onclick={() => app.signOut()}>
+			Disconnect OneDrive
+		</button>
+	{/if}
 
 	<p class="section-head">Sharing &amp; recovery</p>
 	{#if code}

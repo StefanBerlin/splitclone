@@ -17,7 +17,14 @@ import { keyGet, keyPut, metaGet, metaSet } from '$lib/storage/indexed-db';
 import { dataKeyFingerprint, generateDataKey, importDataKey } from '$lib/storage/encryption';
 import { decodeJoinCode, encodeJoinCode } from '$lib/storage/join-code';
 import { appendEvent, deleteLedgerSegments, loadLedgerEvents } from '$lib/storage/segment-store';
+import { isOneDriveConfigured } from '$lib/auth/config';
+import { getAccessToken, isConnected, disconnect } from '$lib/auth/token-store';
+import { OneDriveGraphProvider, type RootRef } from '$lib/storage/providers/onedrive-graph';
+import { listSharedFolders } from '$lib/storage/providers/shared';
+import { checkRemoteLedger, syncLedger } from '$lib/sync/engine';
 import { DEMO_LEDGER_ID, seedEvents } from './seed';
+
+export type SyncState = 'idle' | 'syncing' | 'error';
 
 export interface LedgerSummary {
 	id: UUID;
@@ -41,12 +48,19 @@ class AppStore {
 	private _deviceId = $state('');
 	/** Non-extractable data key per ledger (in-memory mirror of the IDB store). */
 	private keys: Record<UUID, CryptoKey> = {};
-	/** Recovery surface per ledger: re-displayable join code + fingerprint. */
-	private keyMeta = $state<Record<UUID, { joinCode: string; fingerprint: string }>>({});
+	/** Recovery surface per ledger: re-displayable join code + fingerprint +
+	 *  where its OneDrive folder lives (once known). */
+	private keyMeta = $state<Record<UUID, { joinCode: string; fingerprint: string; root?: RootRef }>>(
+		{}
+	);
 	private recoveryAck = $state<UUID[]>([]);
 	/** Per-ledger serialised write chain: segment append is read-modify-write,
 	 *  so concurrent dispatches must not overlap. */
 	private writeChain: Record<UUID, Promise<void>> = {};
+	/** OneDrive connection + sync status (SC-FR-SYN-3). */
+	private _connected = $state(false);
+	private _syncState = $state<SyncState>('idle');
+	private _syncError = $state('');
 
 	constructor() {
 		void this.init();
@@ -57,6 +71,20 @@ class AppStore {
 	}
 	get deviceId(): string {
 		return this._deviceId;
+	}
+	/** True when a OneDrive client id is configured (else the app is purely
+	 *  local and "Connect OneDrive" is hidden). */
+	get oneDriveConfigured(): boolean {
+		return isOneDriveConfigured();
+	}
+	get connected(): boolean {
+		return this._connected;
+	}
+	get syncState(): SyncState {
+		return this._syncState;
+	}
+	get syncError(): string {
+		return this._syncError;
 	}
 
 	private async init(): Promise<void> {
@@ -87,11 +115,16 @@ class AppStore {
 						return;
 					}
 					this.keys[id] = rec.key;
-					this.keyMeta[id] = { joinCode: rec.joinCode, fingerprint: rec.fingerprint };
+					this.keyMeta[id] = {
+						joinCode: rec.joinCode,
+						fingerprint: rec.fingerprint,
+						root: rec.root
+					};
 					loaded[id] = await loadLedgerEvents(id, rec.key);
 				})
 			);
 			this.logs = loaded;
+			if (this.oneDriveConfigured) this._connected = await isConnected();
 		} catch (err) {
 			console.error('[app] init failed; running with empty in-memory state', err);
 		} finally {
@@ -107,9 +140,11 @@ class AppStore {
 		const fingerprint = await dataKeyFingerprint(raw);
 		const joinCode = await encodeJoinCode(raw);
 		raw.fill(0);
-		await keyPut({ ledgerId, key, fingerprint, joinCode });
+		// Created here ⇒ this account owns the OneDrive folder for it.
+		const root: RootRef = { kind: 'own', ledgerId };
+		await keyPut({ ledgerId, key, fingerprint, joinCode, root });
 		this.keys[ledgerId] = key;
-		this.keyMeta[ledgerId] = { joinCode, fingerprint };
+		this.keyMeta[ledgerId] = { joinCode, fingerprint, root };
 		return key;
 	}
 
@@ -258,6 +293,98 @@ class AppStore {
 		const fingerprint = await dataKeyFingerprint(decoded.raw);
 		decoded.raw.fill(0);
 		return { ok: true, fingerprint };
+	}
+
+	// ---- OneDrive connection + sync (Phase 6) -----------------------------
+
+	/** Called by /auth/callback once tokens have been adopted. */
+	async refreshConnection(): Promise<void> {
+		this._connected = await isConnected();
+	}
+
+	async signOut(): Promise<void> {
+		await disconnect();
+		this._connected = false;
+	}
+
+	private providerFor(ledgerId: UUID): OneDriveGraphProvider {
+		const root: RootRef = this.keyMeta[ledgerId]?.root ?? { kind: 'own', ledgerId };
+		return new OneDriveGraphProvider(getAccessToken, root);
+	}
+
+	private async reloadLedger(id: UUID): Promise<void> {
+		const key = this.keys[id];
+		if (!key) return;
+		this.logs[id] = await loadLedgerEvents(id, key);
+	}
+
+	/** Manual sync (SC-FR-SYN-2): pull others' segments, push ours, re-fold. */
+	async syncNow(ledgerId: UUID): Promise<void> {
+		if (!this._connected) {
+			this._syncError = 'Not connected to OneDrive.';
+			this._syncState = 'error';
+			return;
+		}
+		const fp = this.keyMeta[ledgerId]?.fingerprint;
+		if (!fp) return;
+		this._syncState = 'syncing';
+		this._syncError = '';
+		try {
+			// Make sure our optimistic in-memory writes are flushed to IDB
+			// segments before we upload them.
+			await (this.writeChain[ledgerId] ?? Promise.resolve());
+			await syncLedger(this.providerFor(ledgerId), ledgerId, this._deviceId, fp);
+			await this.reloadLedger(ledgerId);
+			this._syncState = 'idle';
+		} catch (err) {
+			this._syncState = 'error';
+			this._syncError = err instanceof Error ? err.message : String(err);
+			console.error('[app] sync failed', err);
+		}
+	}
+
+	/**
+	 * Join a ledger shared from another person's OneDrive (SC-ARC-ENC-3,
+	 * SC-ARC-PRV-3): decode the code, scan folders shared with this account,
+	 * and adopt the one whose plaintext metadata fingerprint matches.
+	 */
+	async joinViaOneDrive(code: string): Promise<{ ok: boolean; ledgerId?: UUID; error?: string }> {
+		if (!this._connected) return { ok: false, error: 'Connect OneDrive first.' };
+		const decoded = await decodeJoinCode(code);
+		if (!decoded.ok || !decoded.raw) {
+			return { ok: false, error: decoded.error ?? 'Invalid join code.' };
+		}
+		const raw = decoded.raw;
+		try {
+			const shared = await listSharedFolders(getAccessToken);
+			for (const folder of shared) {
+				const provider = new OneDriveGraphProvider(getAccessToken, folder.root);
+				try {
+					const meta = await checkRemoteLedger(provider, raw);
+					// Match → adopt this ledger.
+					const id = meta.ledgerId;
+					const key = await importDataKey(raw);
+					const fingerprint = await dataKeyFingerprint(raw);
+					const joinCode = await encodeJoinCode(raw);
+					raw.fill(0);
+					await keyPut({ ledgerId: id, key, fingerprint, joinCode, root: folder.root });
+					this.keys[id] = key;
+					this.keyMeta[id] = { joinCode, fingerprint, root: folder.root };
+					this.logs[id] = [];
+					await this.registerLedger(id);
+					await this.syncNow(id);
+					return { ok: true, ledgerId: id };
+				} catch {
+					continue; // not this folder (mismatch / not a SplitClone folder)
+				}
+			}
+			return {
+				ok: false,
+				error: 'No shared ledger matches this code. Ask the owner to share the folder with you.'
+			};
+		} catch (err) {
+			return { ok: false, error: err instanceof Error ? err.message : String(err) };
+		}
 	}
 }
 

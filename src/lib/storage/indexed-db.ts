@@ -15,6 +15,8 @@
  * shared file format (SC-ARC-FMT-1), so it may evolve freely. The v1→v2
  * upgrade therefore just drops local caches; first run re-seeds.
  */
+import type { RootRef } from './providers/onedrive-graph';
+
 const DB_NAME = 'splitclone';
 const DB_VERSION = 2;
 
@@ -31,6 +33,9 @@ export interface SegmentRecord {
 	/** Plaintext JSONL length, drives rotation policy (SC-ARC-LOG-5). */
 	byteLength: number;
 	updatedAt: string;
+	/** OneDrive ETag last seen for this segment (Phase 6 sync bookkeeping).
+	 *  Private cache field, not part of the file format (SC-ARC-FMT-1). */
+	remoteEtag?: string;
 }
 
 export interface KeyRecord {
@@ -45,6 +50,10 @@ export interface KeyRecord {
 	 *  `key` cannot regenerate it. This is the only surviving externalised
 	 *  form of the key material (architecture §10). */
 	joinCode: string;
+	/** Where this ledger's OneDrive folder lives, once connected: `own`
+	 *  (this account created it) or `shared` (joined from someone else's
+	 *  drive). Absent until first sync/join. Private cache, not file format. */
+	root?: RootRef;
 }
 
 type StoreName = 'meta' | 'segments' | 'keys';
