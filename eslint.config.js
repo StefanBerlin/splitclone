@@ -92,8 +92,14 @@ export default defineConfig(
 		}
 	},
 	{
-		// Override or add rule settings here, such as:
-		// 'svelte/button-has-type': 'error'
-		rules: {}
+		rules: {
+			// TODO(Phase 6): re-enable. This rule enforces resolve() so links
+			// stay correct under a deployment base path (e.g. GitHub Pages
+			// subpath). Under "path A" the MVP runs only at the domain root
+			// with no base path, so it is off until a base path is introduced
+			// in Phase 6, at which point every internal link/goto must be
+			// wrapped in resolve() from '$app/paths'.
+			'svelte/no-navigation-without-resolve': 'off'
+		}
 	}
 );

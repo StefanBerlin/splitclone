@@ -1,84 +1,42 @@
 <script lang="ts">
-	import { APP_VERSION, SCHEMA_VERSION } from '$lib/meta';
+	import { app } from '$lib/ui/stores/app.svelte';
+	import { relativeTime } from '$lib/ui/format/format';
+
+	const ledgers = $derived(app.list());
 </script>
 
-<svelte:head>
-	<title>SplitClone</title>
-</svelte:head>
+<svelte:head><title>SplitClone</title></svelte:head>
 
-<main>
-	<h1>SplitClone</h1>
-	<p class="tagline">
-		Privacy-first shared-expense tracking, backed by an encrypted OneDrive folder. No server.
+<div class="topbar"><span class="title">SplitClone</span></div>
+
+<div class="screen">
+	{#if ledgers.length === 0}
+		<div class="empty">
+			<p>No ledgers on this device.</p>
+			<p>
+				A ledger keeps shared expenses for one group of people. Create a new one or join one a
+				friend shared with you.
+			</p>
+		</div>
+	{:else}
+		<p class="section-head">Your ledgers</p>
+		{#each ledgers as l (l.id)}
+			<a class="row card" href="/ledger/{l.id}" style="margin-bottom: var(--space-3)">
+				<span class="grow">
+					<strong>{l.name}</strong><br />
+					<span class="muted"
+						>{l.participantCount} participants · {relativeTime(l.lastActivity)}</span
+					>
+				</span>
+				<span class="muted">›</span>
+			</a>
+		{/each}
+	{/if}
+
+	<a class="btn btn-primary btn-block" href="/ledger/new">+ Create a new ledger</a>
+	<a class="btn btn-block" href="/ledger/join">Join with a code</a>
+
+	<p class="muted" style="margin-top: var(--space-8); font-size: 13px">
+		Phase 3 — UI shell on in-memory demo data. No persistence, network or encryption yet.
 	</p>
-
-	<section class="status">
-		<h2>Phase 1 — scaffolding</h2>
-		<p>
-			Project skeleton is up. The domain, storage, sync, export, auth, platform and UI layers are
-			stubbed and the import-boundary rule that keeps <code>domain/</code> pure is enforced. No features
-			yet — that starts in Phase 2.
-		</p>
-		<dl>
-			<dt>App version</dt>
-			<dd>{APP_VERSION}</dd>
-			<dt>Schema version</dt>
-			<dd>{SCHEMA_VERSION}</dd>
-		</dl>
-	</section>
-</main>
-
-<style>
-	main {
-		max-width: 36rem;
-		margin: 0 auto;
-		padding: var(--space-8) var(--space-4);
-	}
-
-	h1 {
-		font-size: 28px;
-		margin: 0 0 var(--space-2);
-	}
-
-	.tagline {
-		color: var(--text-muted);
-		margin: 0 0 var(--space-8);
-	}
-
-	.status {
-		background: var(--surface);
-		border: 1px solid var(--border);
-		border-radius: 12px;
-		padding: var(--space-4) var(--space-6);
-	}
-
-	.status h2 {
-		font-size: 17px;
-		margin: 0 0 var(--space-2);
-	}
-
-	.status p {
-		margin: 0 0 var(--space-4);
-	}
-
-	dl {
-		display: grid;
-		grid-template-columns: auto 1fr;
-		gap: var(--space-1) var(--space-4);
-		margin: 0;
-		font-variant-numeric: tabular-nums;
-	}
-
-	dt {
-		color: var(--text-muted);
-	}
-
-	dd {
-		margin: 0;
-	}
-
-	code {
-		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-		font-size: 0.9em;
-	}
-</style>
+</div>

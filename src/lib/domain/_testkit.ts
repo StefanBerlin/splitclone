@@ -4,7 +4,7 @@
  * (deterministic ids/timestamps, no clock).
  */
 import { makeEvent } from './events';
-import type { EventKind, EventPayloads, EventEnvelope } from './types';
+import type { EventKind, EventPayloads, EventEnvelope, LedgerEvent } from './types';
 
 let seq = 0;
 
@@ -28,7 +28,7 @@ export function ev<K extends EventKind>(
 	overrides: Partial<
 		Pick<EventEnvelope<K>, 'id' | 'entryAt' | 'authorDeviceId' | 'authorParticipantId'>
 	> = {}
-): EventEnvelope<K> {
+): Extract<LedgerEvent, { kind: K }> {
 	seq += 1;
 	return makeEvent(kind, payload, {
 		id: overrides.id ?? `evt-${String(seq).padStart(4, '0')}`,

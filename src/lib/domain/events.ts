@@ -6,14 +6,7 @@
  * of the file format (SC-ARC-FMT-1) — changing it post-v1.0 needs approval
  * (SC-ARC-FMT-3).
  */
-import type {
-	EventEnvelope,
-	EventKind,
-	EventPayloads,
-	ISOInstant,
-	LedgerEvent,
-	UUID
-} from './types';
+import type { EventKind, EventPayloads, ISOInstant, LedgerEvent, UUID } from './types';
 
 const EVENT_KINDS: ReadonlySet<string> = new Set<EventKind>([
 	'LedgerRenamed',
@@ -38,13 +31,19 @@ export interface EventMeta {
 	entryAt: ISOInstant;
 }
 
-/** Build a typed envelope. Domain is pure: ids/timestamps are injected. */
+/**
+ * Build a typed envelope. Domain is pure: ids/timestamps are injected.
+ * Returns the specific `LedgerEvent` union member for `K` so the result
+ * assigns cleanly into `LedgerEvent[]` (the bare `EventEnvelope<K>` does not
+ * widen to the mapped union for a generic `K`). The single cast is the
+ * factory's typed seam.
+ */
 export function makeEvent<K extends EventKind>(
 	kind: K,
 	payload: EventPayloads[K],
 	meta: EventMeta
-): EventEnvelope<K> {
-	return { kind, payload, ...meta };
+): Extract<LedgerEvent, { kind: K }> {
+	return { kind, payload, ...meta } as Extract<LedgerEvent, { kind: K }>;
 }
 
 interface BigIntTag {
