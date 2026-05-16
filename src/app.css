@@ -1,0 +1,89 @@
+/*
+ * Design tokens from docs/mockups/00-style-baseline.md.
+ * Light values on :root, dark values under prefers-color-scheme: dark.
+ * A manual override sets [data-theme] on <html> (wired up in a later phase).
+ */
+:root {
+	--bg: #ffffff;
+	--surface: #f7f7f8;
+	--text: #111418;
+	--text-muted: #5a6068;
+	--accent: #0a84ff;
+	--positive: #1f9d55;
+	--negative: #c83a2e;
+	--warning: #b45309;
+	--border: #e3e5e8;
+
+	--space-1: 4px;
+	--space-2: 8px;
+	--space-3: 12px;
+	--space-4: 16px;
+	--space-6: 24px;
+	--space-8: 32px;
+	--space-12: 48px;
+
+	--font-body: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+
+	color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #111418;
+		--surface: #1a1d22;
+		--text: #eaeaec;
+		--text-muted: #8a9099;
+		--accent: #5ea7ff;
+		--positive: #56c08d;
+		--negative: #f0746a;
+		--warning: #f3a755;
+		--border: #272b30;
+	}
+}
+
+[data-theme='light'] {
+	--bg: #ffffff;
+	--surface: #f7f7f8;
+	--text: #111418;
+	--text-muted: #5a6068;
+	--accent: #0a84ff;
+	--positive: #1f9d55;
+	--negative: #c83a2e;
+	--warning: #b45309;
+	--border: #e3e5e8;
+}
+
+[data-theme='dark'] {
+	--bg: #111418;
+	--surface: #1a1d22;
+	--text: #eaeaec;
+	--text-muted: #8a9099;
+	--accent: #5ea7ff;
+	--positive: #56c08d;
+	--negative: #f0746a;
+	--warning: #f3a755;
+	--border: #272b30;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+}
+
+body {
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--font-body);
+	font-size: 17px;
+	line-height: 1.4;
+	-webkit-text-size-adjust: 100%;
+}
+
+a {
+	color: var(--accent);
+}
