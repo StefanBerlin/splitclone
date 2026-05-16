@@ -320,10 +320,15 @@ export interface SegmentStore {
                 └─────────────────────────────────────────────────────┘
 ```
 
-Local IndexedDB holds **plaintext** segments for the device's own writes; only
-ciphertext goes to OneDrive. Other devices' segments are stored locally too
-but as plaintext (post-decryption), because the fold layer wants events not
-bytes.
+Local IndexedDB holds the **sealed** segment envelope, never plaintext —
+the same bytes that go to OneDrive (revised in Phase 5 from the original
+"plaintext in IDB" sketch). Rationale: it makes the encryption boundary
+real and independently reviewable before the OneDrive provider exists
+(Phase 6), and defends data at rest even in the local browser. Append is a
+read-modify-write *through* the codec (decrypt the open segment, append the
+line, re-seal with a fresh IV); fold decrypts on load. The IndexedDB layout
+is explicitly NOT part of the shared file format (SC-ARC-FMT-1), so this
+change needs no schema-version bump and no file-format governance approval.
 
 The 1 MiB threshold (SC-ARC-LOG-5) is a single constant `SEGMENT_THRESHOLD`
 exported from `segment-store.ts`.

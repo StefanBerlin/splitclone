@@ -5,12 +5,18 @@
  *
  * Stores:
  *  - meta:     key/value for app-level data (deviceId, registered ledgers)
- *  - segments: per-device append-only log segments. Phase 4 stores plaintext
- *              JSONL text; Phase 5 wraps the text through the AES-GCM codec
- *              before it is written here / uploaded.
+ *  - segments: per-device append-only log segments. Phase 5: the segment
+ *              body is the AES-GCM-sealed envelope (IV‖ciphertext‖tag), never
+ *              plaintext (SC-ARC-ENC-2). Nothing readable at rest.
+ *  - keys:     per-ledger data key as a NON-extractable CryptoKey handle plus
+ *              its fingerprint (SC-ARC-ENC-3, SC-ARC-ENC-5).
+ *
+ * The IndexedDB layout is private to a device and explicitly NOT part of the
+ * shared file format (SC-ARC-FMT-1), so it may evolve freely. The v1→v2
+ * upgrade therefore just drops local caches; first run re-seeds.
  */
 const DB_NAME = 'splitclone';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export interface SegmentRecord {
 	/** `${ledgerId}::${deviceId}::${name}` */
@@ -20,11 +26,28 @@ export interface SegmentRecord {
 	/** Open-instant filename, lexicographically chronological (SC-ARC-LOG-4). */
 	name: string;
 	status: 'open' | 'closed';
-	/** Plaintext JSONL (Phase 4). */
-	text: string;
+	/** Sealed envelope: 12-byte IV ‖ ciphertext ‖ 16-byte GCM tag. */
+	sealed: Uint8Array;
+	/** Plaintext JSONL length, drives rotation policy (SC-ARC-LOG-5). */
 	byteLength: number;
 	updatedAt: string;
 }
+
+export interface KeyRecord {
+	ledgerId: string;
+	/** Non-extractable AES-GCM CryptoKey (structured-clone-persisted). Used for
+	 *  all encrypt/decrypt; raw bytes are not recoverable from it. */
+	key: CryptoKey;
+	/** SC-ARC-ENC-3 fingerprint (32 hex chars). */
+	fingerprint: string;
+	/** The join code string. Persisted because SC-ARC-ENC-6 requires the
+	 *  recovery code be re-displayable on demand, and the non-extractable
+	 *  `key` cannot regenerate it. This is the only surviving externalised
+	 *  form of the key material (architecture §10). */
+	joinCode: string;
+}
+
+type StoreName = 'meta' | 'segments' | 'keys';
 
 export function segmentId(ledgerId: string, deviceId: string, name: string): string {
 	return `${ledgerId}::${deviceId}::${name}`;
@@ -49,6 +72,16 @@ function openDb(): Promise<IDBDatabase> {
 				const s = db.createObjectStore('segments', { keyPath: 'id' });
 				s.createIndex('byLedger', 'ledgerId', { unique: false });
 			}
+			if (!db.objectStoreNames.contains('keys')) {
+				db.createObjectStore('keys', { keyPath: 'ledgerId' });
+			}
+			// v1 stored plaintext segments with no keys; those bytes cannot be
+			// re-sealed, so drop local caches and let first run re-seed.
+			const upgradeTx = req.transaction;
+			if (upgradeTx && req.result.objectStoreNames.contains('segments')) {
+				upgradeTx.objectStore('meta').clear();
+				upgradeTx.objectStore('segments').clear();
+			}
 		};
 		req.onsuccess = () => resolve(req.result);
 		req.onerror = () => reject(req.error ?? new Error('IndexedDB open failed'));
@@ -57,7 +90,7 @@ function openDb(): Promise<IDBDatabase> {
 }
 
 function tx<T>(
-	store: 'meta' | 'segments',
+	store: StoreName,
 	mode: IDBTransactionMode,
 	run: (s: IDBObjectStore) => IDBRequest<T> | { result: T }
 ): Promise<T> {
@@ -118,8 +151,21 @@ export async function segmentsDeleteByLedger(ledgerId: string): Promise<void> {
 	});
 }
 
+export async function keyGet(ledgerId: string): Promise<KeyRecord | undefined> {
+	return tx<KeyRecord | undefined>('keys', 'readonly', (s) => s.get(ledgerId));
+}
+
+export async function keyPut(rec: KeyRecord): Promise<void> {
+	await tx('keys', 'readwrite', (s) => s.put(rec));
+}
+
+export async function keyDelete(ledgerId: string): Promise<void> {
+	await tx('keys', 'readwrite', (s) => s.delete(ledgerId));
+}
+
 /** Test/maintenance helper: wipe everything. */
 export async function wipeAll(): Promise<void> {
 	await tx('meta', 'readwrite', (s) => s.clear());
 	await tx('segments', 'readwrite', (s) => s.clear());
+	await tx('keys', 'readwrite', (s) => s.clear());
 }

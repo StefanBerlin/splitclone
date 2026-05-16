@@ -27,6 +27,14 @@ deliberate, not accidental.
 
 ### Change log within v1 (development)
 
+- 2026-05-17 — Defined the encrypted segment envelope (SC-ARC-FMT-1 item (c),
+  SC-ARC-ENC-2): `[12-byte random IV ‖ AES-256-GCM ciphertext ‖ 16-byte tag]`,
+  one fresh IV per seal. Also fixed the join-code encoding (SC-ARC-FMT-1 item
+  (e), SC-ARC-ENC-4): `SC1.<base64url(32-byte key)>.<4-hex SHA-256 checksum>`.
+  These are first definitions within schema v1, not changes to a shipped
+  format, so no version bump. Not file format: IndexedDB now stores the sealed
+  envelope rather than plaintext — local cache layout is private per
+  SC-ARC-FMT-1 and excluded from the format.
 - 2026-05-14 — Added `SettlementUpdated` event so settlements can be edited
   with the same semantics, audit trail (`lastEditedAt`/`lastEditedBy`) and
   last-write-wins/tombstone behaviour as expenses. Reason: the expense list

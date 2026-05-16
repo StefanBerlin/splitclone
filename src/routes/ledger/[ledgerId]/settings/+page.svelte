@@ -2,10 +2,14 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { app } from '$lib/ui/stores/app.svelte';
+	import RecoveryCode from '$lib/ui/components/RecoveryCode.svelte';
 
 	const ledgerId = $derived(page.params.ledgerId!);
 	const ledger = $derived(app.derived(ledgerId));
 	const meId = $derived(app.claimedParticipantId(ledgerId));
+	const code = $derived(app.joinCodeFor(ledgerId));
+	const fingerprint = $derived(app.keyFingerprintFor(ledgerId));
+	let showRecovery = $state(false);
 
 	let nameField = $state('');
 	$effect(() => {
@@ -85,12 +89,26 @@
 	<p class="section-head">Sync</p>
 	<p>☁ In sync — local demo data (no network until Phase 6).</p>
 
-	<p class="section-head">Sharing</p>
-	<p class="muted" style="font-size:13px">
-		The recovery code and OneDrive folder sharing are implemented in Phases 5–6. See <code
-			>docs/mockups/10-create-ledger.md</code
-		>.
-	</p>
+	<p class="section-head">Sharing &amp; recovery</p>
+	{#if code}
+		<div class="dl">
+			<dt>Key fingerprint</dt>
+			<dd style="font-size:13px;word-break:break-all">{fingerprint}</dd>
+		</div>
+		{#if showRecovery}
+			<RecoveryCode {code} ledgerName={ledger.ledgerName} />
+			<button class="btn btn-block" onclick={() => (showRecovery = false)}>Hide code</button>
+		{:else}
+			<button class="btn btn-block" onclick={() => (showRecovery = true)}>
+				Show recovery code
+			</button>
+		{/if}
+		<p class="muted" style="font-size:13px">
+			Anyone joining this ledger uses this code. OneDrive folder sharing arrives in Phase 6.
+		</p>
+	{:else}
+		<p class="muted" style="font-size:13px">No data key on this device for this ledger.</p>
+	{/if}
 
 	<p class="section-head">Participants</p>
 	{#each [...ledger.participants.values()] as p (p.id)}
