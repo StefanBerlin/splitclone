@@ -19,8 +19,13 @@ export type CurrencyCode = string; // ISO 4217, e.g. "EUR"
 export interface Participant {
 	id: UUID;
 	name: string;
-	/** Device that has claimed this participant, if any (SC-FR-PRT-2). */
-	claimedByDeviceId?: UUID;
+	/** Devices bound to this participant (SC-FR-PRT-2). Empty = unclaimed /
+	 *  deviceless placeholder (SC-FR-PRT-4). A person on several devices (PC +
+	 *  phone) claims the same participant from each, so this is a set, not a
+	 *  scalar. The inverse invariant still holds: a device is bound to at most
+	 *  one participant, so a device id appears in at most one participant's
+	 *  list (fold enforces this — claiming moves the device). */
+	claimedByDeviceIds: UUID[];
 }
 
 export interface Label {

@@ -10,7 +10,13 @@
  * surface (SC-ARC-ENC-4, -6) is exposed here for the create/join screens.
  * Phase 6 adds the OneDrive provider behind the same façade.
  */
-import { deviceClaim, fold, makeEvent, unclaimedParticipants } from '$lib/domain';
+import {
+	deviceClaim,
+	fold,
+	makeEvent,
+	participantsClaimedElsewhere,
+	unclaimedParticipants
+} from '$lib/domain';
 import type {
 	DerivedState,
 	EventKind,
@@ -298,6 +304,12 @@ class AppStore {
 	 *  includes deviceless placeholders per SC-FR-PRT-4). */
 	unclaimedParticipantList(ledgerId: UUID): Participant[] {
 		return unclaimedParticipants(this.derived(ledgerId));
+	}
+
+	/** Identities already used on another device — a returning person adopts
+	 *  one of these when adding a second device (SC-FR-PRT-2). */
+	claimedElsewhereList(ledgerId: UUID): Participant[] {
+		return participantsClaimedElsewhere(this.derived(ledgerId), this._deviceId);
 	}
 
 	/** SC-FR-PRT-2a: bind this device to an existing participant entry. */

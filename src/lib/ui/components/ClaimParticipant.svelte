@@ -10,12 +10,16 @@
 	let { ledgerId, ledgerName }: { ledgerId: string; ledgerName: string } = $props();
 
 	const candidates = $derived(app.unclaimedParticipantList(ledgerId));
+	// Same person on a second device (PC + phone): they re-pick the identity
+	// they already use elsewhere instead of creating a duplicate (SC-FR-PRT-2).
+	const elsewhere = $derived(app.claimedElsewhereList(ledgerId));
+	const hasAny = $derived(candidates.length > 0 || elsewhere.length > 0);
 	let mode = $state<'pick' | 'create'>('pick');
 	let newName = $state('');
 
 	$effect(() => {
-		// No one to claim → go straight to "add yourself".
-		if (candidates.length === 0) mode = 'create';
+		// No one to claim at all → go straight to "add yourself".
+		if (!hasAny) mode = 'create';
 	});
 
 	function claim(id: string) {
@@ -34,14 +38,32 @@
 		This device isn’t linked to anyone in this ledger yet. Pick your name, or add yourself.
 	</p>
 
-	{#if mode === 'pick' && candidates.length > 0}
-		<ul class="people">
-			{#each candidates as p (p.id)}
-				<li>
-					<button class="btn btn-block" onclick={() => claim(p.id)}>{p.name}</button>
-				</li>
-			{/each}
-		</ul>
+	{#if mode === 'pick' && hasAny}
+		{#if candidates.length > 0}
+			<ul class="people">
+				{#each candidates as p (p.id)}
+					<li>
+						<button class="btn btn-block" onclick={() => claim(p.id)}>{p.name}</button>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+
+		{#if elsewhere.length > 0}
+			<p class="muted group-head">Already set up on another device</p>
+			<p class="muted">
+				Using this ledger on a second device? Pick the name you already use — it links this device
+				to the same person, it doesn’t create a duplicate.
+			</p>
+			<ul class="people">
+				{#each elsewhere as p (p.id)}
+					<li>
+						<button class="btn btn-block" onclick={() => claim(p.id)}>{p.name}</button>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+
 		<button class="link" onclick={() => (mode = 'create')}>None of these — add me</button>
 	{:else}
 		<label class="field">
@@ -58,7 +80,7 @@
 		<button class="btn btn-primary btn-block" disabled={!newName.trim()} onclick={createAndClaim}>
 			Join as “{newName.trim() || '…'}”
 		</button>
-		{#if candidates.length > 0}
+		{#if hasAny}
 			<button class="link" onclick={() => (mode = 'pick')}>← Back to the list</button>
 		{/if}
 	{/if}
@@ -79,6 +101,12 @@
 		color: var(--text-muted, #666);
 		font-size: 0.9rem;
 		margin: 0;
+	}
+	.group-head {
+		margin-top: var(--space-2, 8px);
+		font-size: 0.8rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
 	}
 	.people {
 		list-style: none;

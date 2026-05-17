@@ -137,7 +137,50 @@ describe('tombstones and provenance', () => {
 		]);
 		const anna = state.participants.get('p-anna')!;
 		expect(anna.name).toBe('Anna B.');
-		expect(anna.claimedByDeviceId).toBe('dev-1');
+		expect(anna.claimedByDeviceIds).toEqual(['dev-1']);
+	});
+});
+
+describe('multi-device participant claim (SC-FR-PRT-2)', () => {
+	it('a participant can be claimed by several devices (PC + phone)', () => {
+		const state = fold([
+			...baseLedger(),
+			ev('ParticipantClaimed', { participantId: 'p-anna', deviceId: 'dev-pc' }),
+			ev('ParticipantClaimed', { participantId: 'p-anna', deviceId: 'dev-phone' })
+		]);
+		expect(state.participants.get('p-anna')!.claimedByDeviceIds).toEqual(['dev-pc', 'dev-phone']);
+	});
+
+	it('re-claiming is idempotent for the same device', () => {
+		const state = fold([
+			...baseLedger(),
+			ev('ParticipantClaimed', { participantId: 'p-anna', deviceId: 'dev-pc' }),
+			ev('ParticipantClaimed', { participantId: 'p-anna', deviceId: 'dev-pc' })
+		]);
+		expect(state.participants.get('p-anna')!.claimedByDeviceIds).toEqual(['dev-pc']);
+	});
+
+	it('a device stays bound to exactly one participant — claiming moves it', () => {
+		// No explicit entryAt: _testkit's seq increments in source order, so
+		// the adds (baseLedger) precede the claims and the claims are ordered.
+		const state = fold([
+			...baseLedger(),
+			ev('ParticipantClaimed', { participantId: 'p-anna', deviceId: 'dev-1' }),
+			ev('ParticipantClaimed', { participantId: 'p-stefan', deviceId: 'dev-1' })
+		]);
+		expect(state.participants.get('p-anna')!.claimedByDeviceIds).toEqual([]);
+		expect(state.participants.get('p-stefan')!.claimedByDeviceIds).toEqual(['dev-1']);
+	});
+
+	it('moving one device leaves a co-device on the old participant intact', () => {
+		const state = fold([
+			...baseLedger(),
+			ev('ParticipantClaimed', { participantId: 'p-anna', deviceId: 'dev-pc' }),
+			ev('ParticipantClaimed', { participantId: 'p-anna', deviceId: 'dev-phone' }),
+			ev('ParticipantClaimed', { participantId: 'p-stefan', deviceId: 'dev-phone' })
+		]);
+		expect(state.participants.get('p-anna')!.claimedByDeviceIds).toEqual(['dev-pc']);
+		expect(state.participants.get('p-stefan')!.claimedByDeviceIds).toEqual(['dev-phone']);
 	});
 });
 
