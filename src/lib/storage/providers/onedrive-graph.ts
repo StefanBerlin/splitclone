@@ -82,7 +82,14 @@ export class OneDriveGraphProvider implements SharedFolderProvider {
 		}
 		if (!res.ok && res.status >= 400) {
 			const body = await res.text().catch(() => '');
-			throw new SemanticError(`OneDrive ${res.status}: ${body.slice(0, 200)}`, res.status);
+			let detail = body.slice(0, 300);
+			try {
+				const j = JSON.parse(body) as { error?: { code?: string; message?: string } };
+				if (j.error) detail = `${j.error.code ?? '?'} – ${j.error.message ?? ''}`.trim();
+			} catch {
+				/* not JSON; keep the raw slice */
+			}
+			throw new SemanticError(`OneDrive ${res.status}: ${detail}`, res.status);
 		}
 		return res;
 	}
@@ -127,15 +134,24 @@ export class OneDriveGraphProvider implements SharedFolderProvider {
 			'Content-Type': 'application/octet-stream'
 		};
 		if (precondition?.ifMatch !== undefined) headers['If-Match'] = precondition.ifMatch;
-		const suffix =
-			precondition?.ifNoneMatch === '*'
-				? '/content?@microsoft.graph.conflictBehavior=fail'
-				: '/content';
-		const res = await this.call(rootUrl(this.root, path, suffix), {
-			method: 'PUT',
-			headers,
-			body: bytes.slice().buffer
-		});
+		const createGuard = precondition?.ifNoneMatch === '*';
+		const suffix = createGuard ? '/content?@microsoft.graph.conflictBehavior=fail' : '/content';
+		let res: Response;
+		try {
+			res = await this.call(rootUrl(this.root, path, suffix), {
+				method: 'PUT',
+				headers,
+				body: bytes.slice().buffer
+			});
+		} catch (e) {
+			// conflictBehavior=fail reports an existing item as 409
+			// nameAlreadyExists, not 412. Normalise it so the sync engine's
+			// existing precondition self-heal (re-read ETag, overwrite) runs.
+			if (createGuard && e instanceof SemanticError && e.status === 409) {
+				throw new PreconditionFailedError('Item already exists');
+			}
+			throw e;
+		}
 		const item = (await res.json()) as DriveItem;
 		return { etag: item.eTag ?? '' };
 	}

@@ -95,7 +95,17 @@ export async function appendEvent(
 	const sealed = await sealSegment(enc.encode(nextText), key);
 
 	const base: Omit<SegmentRecord, 'sealed' | 'byteLength' | 'updatedAt'> = open
-		? { id: open.id, ledgerId, deviceId, name: open.name, status: 'open' }
+		? // Carry remoteEtag across the re-seal: this is the same remote file,
+			// so dropping it would make the next push do a create (→ 409
+			// nameAlreadyExists) instead of a conditional overwrite.
+			{
+				id: open.id,
+				ledgerId,
+				deviceId,
+				name: open.name,
+				status: 'open',
+				remoteEtag: open.remoteEtag
+			}
 		: (() => {
 				const name = newSegmentName(now);
 				return {

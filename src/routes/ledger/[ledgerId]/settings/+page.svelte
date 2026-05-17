@@ -104,7 +104,12 @@
 			{:else if app.syncState === 'offline'}
 				⌧ Offline — changes will sync automatically when you’re back online.
 			{:else if app.syncState === 'error'}
-				⚠ Sync error: <span class="muted">{app.syncError}</span>
+				⚠ Sync error:
+				<span
+					class="muted"
+					style="display:block;margin-top:4px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px"
+					>{app.syncError}</span
+				>
 			{:else}
 				☁ In sync. Changes sync automatically.
 			{/if}
