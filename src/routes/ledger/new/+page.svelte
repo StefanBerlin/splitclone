@@ -46,7 +46,7 @@
 	<div class="screen">
 		<label class="field">
 			<span>Name</span>
-			<input bind:value={name} placeholder="e.g. Flatshare — Berlin" />
+			<input bind:value={name} placeholder="e.g. Apartment, Trip, Project" />
 		</label>
 
 		<label class="field">

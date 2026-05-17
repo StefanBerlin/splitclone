@@ -20,7 +20,7 @@ import type {
 	UUID
 } from '$lib/domain';
 import { getDeviceId } from '$lib/platform/device-id';
-import { keyGet, keyPut, metaGet, metaSet, segmentsDeleteForeign } from '$lib/storage/indexed-db';
+import { keyGet, keyPut, metaGet, metaSet } from '$lib/storage/indexed-db';
 import { dataKeyFingerprint, generateDataKey, importDataKey } from '$lib/storage/encryption';
 import { decodeJoinCode, encodeJoinCode } from '$lib/storage/join-code';
 import { appendEvent, deleteLedgerSegments, loadLedgerEvents } from '$lib/storage/segment-store';
@@ -33,7 +33,6 @@ import {
 	listSharedFolders
 } from '$lib/storage/providers/shared';
 import { checkRemoteLedger, syncLedger } from '$lib/sync/engine';
-import { DEMO_LEDGER_ID, seedEvents } from './seed';
 
 /** SC-FR-SYN-3: idle = in sync, plus syncing / offline / error. */
 export type SyncState = 'idle' | 'syncing' | 'offline' | 'error';
@@ -141,19 +140,9 @@ class AppStore {
 		try {
 			this._deviceId = await getDeviceId();
 			this.recoveryAck = (await metaGet<UUID[]>(RECOVERY_ACK_KEY)) ?? [];
-			let ids = (await metaGet<UUID[]>(LEDGERS_KEY)) ?? [];
-
-			if (ids.length === 0) {
-				// First run on this device: mint a key for the demo ledger and
-				// persist its sealed seed so it survives a reload.
-				const key = await this.mintLedgerKey(DEMO_LEDGER_ID);
-				const seeded = this.normaliseSeed(seedEvents(), this._deviceId);
-				for (const ev of seeded) {
-					await appendEvent(DEMO_LEDGER_ID, this._deviceId, key, ev);
-				}
-				ids = [DEMO_LEDGER_ID];
-				await metaSet(LEDGERS_KEY, ids);
-			}
+			// No demo/seed data: a fresh device starts with zero ledgers and the
+			// home screen's empty state guides the user to create or join one.
+			const ids = (await metaGet<UUID[]>(LEDGERS_KEY)) ?? [];
 
 			const loaded: Record<UUID, LedgerEvent[]> = {};
 			await Promise.all(
@@ -171,19 +160,7 @@ class AppStore {
 						root: rec.root
 					};
 					try {
-						if (id === DEMO_LEDGER_ID) {
-							// The demo ledger is local-only with a per-device key. A
-							// prior bug auto-synced it under a shared constant path;
-							// purge any other device's (un-decryptable) segments that
-							// leaked in, and only ever fold this device's own.
-							const purged = await segmentsDeleteForeign(id, this._deviceId);
-							if (purged > 0) {
-								console.warn(`[app] removed ${purged} foreign segment(s) from the demo ledger`);
-							}
-							loaded[id] = await loadLedgerEvents(id, rec.key, this._deviceId);
-						} else {
-							loaded[id] = await loadLedgerEvents(id, rec.key);
-						}
+						loaded[id] = await loadLedgerEvents(id, rec.key);
 					} catch (e) {
 						// Isolate: one unreadable ledger must not blank the others.
 						console.error(`[app] failed to load ledger ${id}`, e);
@@ -249,16 +226,6 @@ class AppStore {
 
 	clearFilter(ledgerId: UUID): void {
 		this._filters = { ...this._filters, [ledgerId]: { from: '', to: '', labels: [] } };
-	}
-
-	/** Re-author seed events onto this device so claim detection works. */
-	private normaliseSeed(events: LedgerEvent[], deviceId: string): LedgerEvent[] {
-		return events.map((ev) => {
-			if (ev.kind === 'ParticipantClaimed') {
-				return { ...ev, authorDeviceId: deviceId, payload: { ...ev.payload, deviceId } };
-			}
-			return { ...ev, authorDeviceId: deviceId };
-		});
 	}
 
 	private persist(ledgerId: UUID, event: LedgerEvent): void {
@@ -461,15 +428,8 @@ class AppStore {
 		this.logs[id] = await loadLedgerEvents(id, key);
 	}
 
-	/** The seed/demo ledger is local-only: a constant id but a per-device key,
-	 *  so it must never round-trip through the shared OneDrive path. */
-	private isSyncable(ledgerId: UUID): boolean {
-		return ledgerId !== DEMO_LEDGER_ID;
-	}
-
 	/** Manual sync (SC-FR-SYN-2): force an immediate pull+push for one ledger. */
 	async syncNow(ledgerId: UUID): Promise<void> {
-		if (!this.isSyncable(ledgerId)) return; // demo ledger: nothing to sync
 		if (!this._connected) {
 			this._syncError = 'Not connected to OneDrive.';
 			this._syncState = 'error';
@@ -483,7 +443,6 @@ class AppStore {
 	 *  debounced run, a focus run and a manual run can't collide on one folder.
 	 *  `offline` is reported, not treated as a hard error (SC-FR-SYN-3). */
 	private async runSync(ledgerId: UUID): Promise<void> {
-		if (!this.isSyncable(ledgerId)) return;
 		if (!this._connected || this.syncing.has(ledgerId)) return;
 		const fp = this.keyMeta[ledgerId]?.fingerprint;
 		if (!fp) return;
@@ -522,7 +481,6 @@ class AppStore {
 	/** Coalesce a burst of commits behind one timer (non-resetting, so it can't
 	 *  be starved past the SC-FR-SYN-1 10 s budget) and then push. */
 	private scheduleAutoSync(ledgerId: UUID): void {
-		if (!this.isSyncable(ledgerId)) return;
 		if (!this.oneDriveConfigured || !this._connected) return;
 		if (!this.keyMeta[ledgerId]?.fingerprint) return;
 		if (this.autoTimers[ledgerId] !== undefined) return; // already pending
