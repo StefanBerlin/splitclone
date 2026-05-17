@@ -10,6 +10,7 @@
 	const meId = $derived(app.claimedParticipantId(ledgerId));
 	const code = $derived(app.joinCodeFor(ledgerId));
 	const fingerprint = $derived(app.keyFingerprintFor(ledgerId));
+	const recoveryAcked = $derived(app.recoveryAcknowledged(ledgerId));
 	let showRecovery = $state(false);
 
 	let nameField = $state('');
@@ -144,6 +145,24 @@
 				Show recovery code
 			</button>
 		{/if}
+
+		{#if recoveryAcked}
+			<p class="muted" style="font-size:13px">
+				✓ Reminder off — you’ve confirmed this code is saved.
+				<button class="linkish" onclick={() => app.resetRecoveryAck(ledgerId)}>
+					Remind me again
+				</button>
+			</p>
+		{:else}
+			<button
+				class="btn btn-block"
+				style="margin-top:var(--space-2)"
+				onclick={() => app.acknowledgeRecovery(ledgerId)}
+			>
+				I’ve saved it — stop reminding me
+			</button>
+		{/if}
+
 		<p class="muted" style="font-size:13px">
 			This code is the secret that unlocks (decrypts) the ledger. Share it only with people you want
 			to join, through a trusted channel — never inside the OneDrive folder itself.
@@ -186,3 +205,15 @@
 		be rejoined later with the recovery code.
 	</p>
 </div>
+
+<style>
+	.linkish {
+		background: none;
+		border: none;
+		padding: 0;
+		color: var(--accent);
+		font: inherit;
+		text-decoration: underline;
+		cursor: pointer;
+	}
+</style>

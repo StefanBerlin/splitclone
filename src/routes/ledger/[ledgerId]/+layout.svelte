@@ -77,7 +77,10 @@
 		{#if needsRecoveryNag}
 			<div class="recovery-banner">
 				<span>⚠ Save your recovery code for “{ledger?.ledgerName}”</span>
-				<button class="link" onclick={() => (showRecovery = true)}>Show code</button>
+				<span class="actions">
+					<button class="link" onclick={() => (showRecovery = true)}>Show code</button>
+					<button class="link" onclick={acknowledge}>I’ve saved it</button>
+				</span>
 			</div>
 		{/if}
 
@@ -134,6 +137,11 @@
 		border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
 		border-radius: var(--radius-sm);
 	}
+	.recovery-banner .actions {
+		display: flex;
+		gap: 14px;
+		flex: none;
+	}
 	.recovery-banner .link {
 		background: none;
 		border: none;
@@ -142,6 +150,7 @@
 		text-decoration: underline;
 		cursor: pointer;
 		flex: none;
+		padding: 0;
 	}
 	.overlay {
 		position: fixed;

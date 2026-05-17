@@ -396,6 +396,14 @@ class AppStore {
 		void metaSet(RECOVERY_ACK_KEY, this.recoveryAck);
 	}
 
+	/** Re-arm the save-your-recovery-code prompt (SC-ARC-ENC-6: the user may
+	 *  re-display the prompt at any later time from ledger settings). */
+	resetRecoveryAck(ledgerId: UUID): void {
+		if (!this.recoveryAck.includes(ledgerId)) return;
+		this.recoveryAck = this.recoveryAck.filter((id) => id !== ledgerId);
+		void metaSet(RECOVERY_ACK_KEY, this.recoveryAck);
+	}
+
 	/** Client-side validation of a pasted join code (SC-ARC-ENC-4). The actual
 	 *  remote fetch + fingerprint-vs-metadata check (SC-ARC-ENC-3) needs the
 	 *  OneDrive provider and lands in Phase 6, so this only proves the code is
