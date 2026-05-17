@@ -1,0 +1,16 @@
+# Package Managers
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+bun.lock
+bun.lockb
+
+# Miscellaneous
+/static/
+
+# Hand-authored documentation (StrictDoc .sdoc, ASCII wireframes, design prose).
+# These follow their own formatting conventions; the code formatter must not
+# touch them. See docs/architecture.md.
+/docs/
+LICENSE
+.venv/

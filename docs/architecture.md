@@ -19,7 +19,7 @@ they are wired together at runtime → build/deploy.
 | App framework | **SvelteKit** + TypeScript | Smallest compiled bundles for a PWA cold-start, reactive without virtual-DOM overhead, native TS, good PWA tooling. Decided 2026-05-14. |
 | Build / dev | Vite (bundled with SvelteKit) | Default; no reason to deviate. |
 | Crypto | Browser-native `crypto.subtle` (WebCrypto) | Required by SC-ARC-ENC-2; no third-party crypto library. |
-| Microsoft Graph | `@microsoft/microsoft-graph-client` + custom auth provider | Standard SDK; thin wrapper around `fetch`. |
+| Microsoft Graph | Hand-rolled `fetch` (no SDK) — **revised in Phase 6** | The SDK adds weight for the ~4 endpoints we use (children, content GET/PUT, delete, sharedWithMe); consistent with the no-MSAL / hand-rolled-IDB anti-dependency posture. Scope is `Files.ReadWrite` (not AppFolder) so a folder one user owns+shares is reachable by others via "shared with me" — true multi-user (decided with the project owner). |
 | OAuth | Hand-rolled PKCE flow (no MSAL.js) | MSAL.js is large and opinionated; PKCE is ~150 lines for what we need (SC-NFR-SEC-2). Re-evaluate if scope grows. |
 | QR | `qr-creator` (pure JS, no canvas dependency) for generation; `barcode-detector` shim or `@zxing/browser` for scan | Only loaded on the join-code screens (code-split). |
 | Local storage | IndexedDB via a thin custom wrapper | Avoids Dexie/idb-keyval bundle cost; our access patterns are simple. |
@@ -320,10 +320,15 @@ export interface SegmentStore {
                 └─────────────────────────────────────────────────────┘
 ```
 
-Local IndexedDB holds **plaintext** segments for the device's own writes; only
-ciphertext goes to OneDrive. Other devices' segments are stored locally too
-but as plaintext (post-decryption), because the fold layer wants events not
-bytes.
+Local IndexedDB holds the **sealed** segment envelope, never plaintext —
+the same bytes that go to OneDrive (revised in Phase 5 from the original
+"plaintext in IDB" sketch). Rationale: it makes the encryption boundary
+real and independently reviewable before the OneDrive provider exists
+(Phase 6), and defends data at rest even in the local browser. Append is a
+read-modify-write *through* the codec (decrypt the open segment, append the
+line, re-seal with a fresh IV); fold decrypts on load. The IndexedDB layout
+is explicitly NOT part of the shared file format (SC-ARC-FMT-1), so this
+change needs no schema-version bump and no file-format governance approval.
 
 The 1 MiB threshold (SC-ARC-LOG-5) is a single constant `SEGMENT_THRESHOLD`
 exported from `segment-store.ts`.
@@ -531,15 +536,31 @@ Routing notes:
 A reusable `<MoneyInput>` component takes/returns `bigint` cents and never
 floats.
 
-## 9. Service Worker (SC-NFR-OFF-1)
+## 9. Service Worker (SC-NFR-OFF-1) — Phase 8
 
-- Registered from `app.html` post-load to avoid blocking first paint.
-- Caches the app shell (HTML/JS/CSS/manifest/icons) on install; serves
-  cache-first for those.
-- Network-first for `graph.microsoft.com/*` calls; falls back to "you're
-  offline" toast which the outbox handles.
-- No background sync API on iOS Safari — periodic push attempts happen
-  on every app focus (SC-FR-SYN-1).
+Implemented as `src/service-worker.ts` using SvelteKit's built-in
+`$service-worker` module. **Deviation (deliberate, same anti-dependency
+posture as hand-rolled Graph/PKCE/IDB): no `vite-plugin-pwa`.** SvelteKit
+already bundles + auto-registers the file from the built shell on `load`
+(production only, never in `dev`) and exposes the precise `build`/`files`/
+`version` lists — a plugin would add a dependency for nothing.
+
+- **Precache on install:** `build` (hashed immutable) + `files` (static,
+  incl. manifest + icons) + the SPA shell (`base + '/'`). Best-effort
+  (`Promise.allSettled`) so one unreachable asset can't fail the install.
+- **Assets:** cache-first (content-hashed, safe to serve stale).
+- **Navigations:** network-first, falling back to the cached shell so a
+  cold offline launch still boots; the client router then resolves the
+  route from IndexedDB.
+- **Cross-origin (`graph.microsoft.com`, OneDrive CDN): never intercepted**
+  — the SW returns without calling `respondWith`, so sync/auth always hit
+  the live network. Offline write durability is the data layer's job, not
+  the SW's: writes land in sealed IDB segments immediately and the sync
+  engine retries on `online`/focus (Phase 7), so there is no separate
+  outbox store.
+- `activate` deletes caches whose key ≠ `splitclone-${version}`.
+- No Background Sync API on iOS Safari — push attempts ride app focus /
+  the post-commit debounce (SC-FR-SYN-1).
 
 ## 10. Encryption key lifecycle
 
@@ -571,9 +592,12 @@ string is the only externalised form.
 - Public GitHub repo. CI builds the static bundle and writes a release
   manifest `bundle-manifest.json` enumerating every asset path with its
   SHA-256.
-- GitHub Pages deployment uses `vite-plugin-pwa`'s output verbatim. The
-  release tag in Git equals the `sw-version` in the Service Worker so a
-  user can verify which version they're running.
+- GitHub Pages deployment uses the `adapter-static` output verbatim
+  (no `vite-plugin-pwa`; the Service Worker is hand-rolled — see §9). The
+  release tag in Git should equal the SvelteKit `version` baked into the
+  Service Worker cache key (`splitclone-${version}`) so a user can verify
+  which version they're running. (Pinning `version` to the commit SHA is
+  part of the Phase 9 v1.0/verifiability hardening.)
 - `index.html` includes a `<meta name="splitclone-build" content="…">` with
   the commit SHA so support requests can identify exactly which build is
   affected.
