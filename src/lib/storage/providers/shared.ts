@@ -85,3 +85,48 @@ export async function listOwnLedgerFolders(getToken: TokenGetter): Promise<OwnFo
 	}
 	return out;
 }
+
+/**
+ * Immediate child folders of a shared folder, as `shared` RootRefs. Lets a
+ * person share the whole `SplitClone` parent folder once (instead of one
+ * folder per ledger): the recipient's join scan then descends one level to
+ * find the per-ledger folders that actually contain `ledger.json`.
+ */
+export async function listSharedChildFolders(
+	getToken: TokenGetter,
+	parent: Extract<RootRef, { kind: 'shared' }>
+): Promise<SharedFolderRef[]> {
+	const token = await getToken();
+	if (!token) return [];
+	let res: Response;
+	try {
+		res = await fetch(
+			`${GRAPH_BASE}/drives/${parent.driveId}/items/${parent.itemId}/children?$top=200`,
+			{ headers: { Authorization: `Bearer ${token}` } }
+		);
+	} catch (e) {
+		throw new TransportError('Network error listing shared subfolders', e);
+	}
+	if (!res.ok) return [];
+	const json = (await res.json()) as {
+		value: {
+			id?: string;
+			name?: string;
+			folder?: unknown;
+			parentReference?: { driveId?: string };
+		}[];
+	};
+	const out: SharedFolderRef[] = [];
+	for (const it of json.value) {
+		if (!it.folder || !it.id) continue;
+		out.push({
+			name: it.name ?? '',
+			root: {
+				kind: 'shared',
+				driveId: it.parentReference?.driveId ?? parent.driveId,
+				itemId: it.id
+			}
+		});
+	}
+	return out;
+}
