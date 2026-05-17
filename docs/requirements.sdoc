@@ -1,8 +1,8 @@
 [DOCUMENT]
 TITLE: SplitClone - Software Requirements Specification
 UID: SC-SRS
-VERSION: 0.11 (draft)
-DATE: 2026-05-14
+VERSION: 0.12 (draft)
+DATE: 2026-05-17
 PREFIX: SC-
 OPTIONS:
   ENABLE_MID: False
@@ -1485,6 +1485,33 @@ phase must close before implementation:
     Review and sign-off on both artefacts is a prerequisite for starting
     implementation. The format (Figma, hand-drawn, Markdown + Mermaid,
     etc.) is left open.
+
+  - Q9: Local backup / restore. The app shall be able to export the
+    complete local application database (every ledger's full event log,
+    keys/join codes, device identity and app settings — everything needed
+    to fully reconstruct app state on a new device) to a single file, and
+    to re-import that file to restore it. Stated user intent:
+
+      (a) The backup is deliberately NOT encrypted and is human-readable
+          (e.g. JSON). This is an explicit, accepted exception to the
+          at-rest encryption posture (SC-ARC-ENC-*): the file contains
+          the data keys / join codes in clear, so anyone holding it can
+          read every ledger. Securing the exported file is explicitly the
+          user's responsibility, not the app's — the UI must say so at
+          export time.
+      (b) Restore semantics are open: full replace vs. merge into existing
+          state (the deterministic fold makes merge feasible, but key
+          collisions and device-identity handling need design — relates to
+          SC-FR-PRT-2 device claim and SC-ARC-LOG-1 sole-writer).
+      (c) The backup file is a new member of the file format (SC-ARC-FMT-1)
+          and therefore needs its own schema version + CHANGELOG entry and
+          falls under the SC-ARC-FMT-3 governance rule once defined.
+      (d) Open: whether restore is per-ledger selective or all-or-nothing,
+          and whether export is offered separately from the existing
+          per-ledger CSV export (SC-FR-EXR-*), which is a different
+          feature (accounting export, not a backup).
+
+    Out of MVP scope; recorded so the design is deliberate when scheduled.
 <<<
 
 [[/SECTION]]
