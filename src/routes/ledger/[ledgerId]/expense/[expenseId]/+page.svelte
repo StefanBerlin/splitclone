@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { app } from '$lib/ui/stores/app.svelte';
 	import { splitEqually, resolveLabelNames } from '$lib/domain';
 	import { euro, formatDate } from '$lib/ui/format/format';
@@ -32,12 +33,12 @@
 	function remove() {
 		if (!confirm('Delete this expense? It disappears for everyone after sync.')) return;
 		app.dispatch(ledgerId, 'ExpenseDeleted', { expenseId });
-		goto(`/ledger/${ledgerId}`);
+		goto(resolve('/ledger/[ledgerId]', { ledgerId }));
 	}
 </script>
 
 <div class="topbar">
-	<a href="/ledger/{ledgerId}">‹ Expenses</a>
+	<a href={resolve('/ledger/[ledgerId]', { ledgerId })}>‹ Expenses</a>
 	<span class="title">Expense details</span>
 </div>
 
@@ -84,7 +85,11 @@
 		</p>
 
 		<div style="display:flex; gap:var(--space-3); margin-top:var(--space-6)">
-			<a class="btn btn-primary" href="/ledger/{ledgerId}/expense/{expenseId}/edit">Edit</a>
+			<a
+				class="btn btn-primary"
+				href={resolve('/ledger/[ledgerId]/expense/[expenseId]/edit', { ledgerId, expenseId })}
+				>Edit</a
+			>
 			<button class="btn btn-danger" onclick={remove}>🗑 Delete</button>
 		</div>
 	{/if}

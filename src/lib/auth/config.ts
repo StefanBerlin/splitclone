@@ -13,6 +13,7 @@
  * "Connect OneDrive" affordance is disabled.
  */
 import { env } from '$env/dynamic/public';
+import { base } from '$app/paths';
 
 export const OAUTH_AUTHORITY = 'https://login.microsoftonline.com/consumers/oauth2/v2.0';
 export const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
@@ -33,9 +34,11 @@ export function oauthConfig(): OAuthConfig | null {
 	if (!clientId) return null;
 	if (typeof window === 'undefined') return null; // redirect URI needs an origin
 	const path = env.PUBLIC_MS_REDIRECT_PATH?.trim() || '/auth/callback';
+	// `base` ('/splitclone' on the GitHub Pages project site, '' at the
+	// domain root) must be part of the registered Entra redirect URI.
 	return {
 		clientId,
-		redirectUri: new URL(path, window.location.origin).toString(),
+		redirectUri: new URL(`${base}${path}`, window.location.origin).toString(),
 		authorizeEndpoint: `${OAUTH_AUTHORITY}/authorize`,
 		tokenEndpoint: `${OAUTH_AUTHORITY}/token`,
 		scopes: OAUTH_SCOPES

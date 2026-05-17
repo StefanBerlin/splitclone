@@ -2,13 +2,14 @@
  * Pure segment-rotation policy (SC-ARC-LOG-4 / SC-ARC-LOG-5). No I/O — kept
  * separate from segment-store so the rule is unit-testable without IndexedDB.
  *
- * Threshold note: SC-ARC-LOG-5 specifies 1 MiB for production. During
- * development it is deliberately tiny (4 KiB) so rotation is observable with
- * a handful of expenses while reviewing Phase 4. It is a tunable constant and
- * does not affect interoperability — every device folds all segments
- * regardless of where another device drew its boundaries.
+ * Threshold note: SC-ARC-LOG-5 specifies 1 MiB (1,048,576 bytes) for
+ * production; raised from the 4 KiB dev value at Phase 9 (v1.0 hardening) now
+ * that rotation has been reviewed. It is a tunable constant and does not
+ * affect interoperability — every device folds all segments regardless of
+ * where another device drew its boundaries (SRS Q2), so this is not a
+ * file-format change and needs no CHANGELOG entry.
  */
-export const SEGMENT_THRESHOLD = 4 * 1024;
+export const SEGMENT_THRESHOLD = 1024 * 1024;
 
 /** UTF-8 byte length of a string. */
 export function byteLength(s: string): number {

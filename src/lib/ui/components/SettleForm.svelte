@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { app } from '$lib/ui/stores/app.svelte';
 	import { parseMoney } from '$lib/domain';
 	import { euro } from '$lib/ui/format/format';
@@ -51,7 +52,11 @@
 		from !== '' && to !== '' && from !== to && parsed !== null && parsed > 0n
 	);
 
-	const backHref = $derived(settlementId ? `/ledger/${ledgerId}` : `/ledger/${ledgerId}/balances`);
+	const backHref = $derived(
+		settlementId
+			? resolve('/ledger/[ledgerId]', { ledgerId })
+			: resolve('/ledger/[ledgerId]/balances', { ledgerId })
+	);
 
 	function save() {
 		if (!canSave || parsed === null) {
@@ -73,14 +78,18 @@
 				input
 			});
 		}
-		goto(settlementId ? `/ledger/${ledgerId}` : `/ledger/${ledgerId}/balances`);
+		goto(
+			settlementId
+				? resolve('/ledger/[ledgerId]', { ledgerId })
+				: resolve('/ledger/[ledgerId]/balances', { ledgerId })
+		);
 	}
 
 	function remove() {
 		if (!settlementId) return;
 		if (!confirm('Delete this settlement? It disappears for everyone after sync.')) return;
 		app.dispatch(ledgerId, 'SettlementDeleted', { settlementId });
-		goto(`/ledger/${ledgerId}`);
+		goto(resolve('/ledger/[ledgerId]', { ledgerId }));
 	}
 
 	function label(id: string): string {

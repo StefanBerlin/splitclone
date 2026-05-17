@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { resolve } from '$app/paths';
 	import { app } from '$lib/ui/stores/app.svelte';
 	import { listExpenses, resolveLabelNames } from '$lib/domain';
 	import type { Expense, Settlement } from '$lib/domain';
@@ -9,25 +10,22 @@
 	const ledger = $derived(app.derived(ledgerId));
 	const meId = $derived(app.claimedParticipantId(ledgerId));
 
+	// Participant is a local browse-only filter; the date-range + label filter
+	// is shared via the store so the export route honours it (SC-FR-EXR-5).
 	let filterParticipant = $state('');
-	let activeLabels = $state<string[]>([]);
-	let from = $state('');
-	let to = $state('');
+	const f = $derived(app.filter(ledgerId));
+	const activeLabels = $derived(f.labels);
+	const from = $derived(f.from);
+	const to = $derived(f.to);
 
-	const filtersActive = $derived(
-		filterParticipant !== '' || activeLabels.length > 0 || from !== '' || to !== ''
-	);
+	const filtersActive = $derived(filterParticipant !== '' || app.filterActive(ledgerId));
 
 	function toggleLabel(id: string) {
-		activeLabels = activeLabels.includes(id)
-			? activeLabels.filter((x) => x !== id)
-			: [...activeLabels, id];
+		app.toggleFilterLabel(ledgerId, id);
 	}
 	function clearAll() {
 		filterParticipant = '';
-		activeLabels = [];
-		from = '';
-		to = '';
+		app.clearFilter(ledgerId);
 	}
 
 	type Row =
@@ -113,10 +111,20 @@
 	</div>
 	<div class="chip-row">
 		<label class="muted" style="font-size:13px">
-			from <input type="date" bind:value={from} style="width:auto" /></label
+			from <input
+				type="date"
+				value={from}
+				oninput={(e) => app.setFilter(ledgerId, { from: e.currentTarget.value })}
+				style="width:auto"
+			/></label
 		>
 		<label class="muted" style="font-size:13px">
-			to <input type="date" bind:value={to} style="width:auto" /></label
+			to <input
+				type="date"
+				value={to}
+				oninput={(e) => app.setFilter(ledgerId, { to: e.currentTarget.value })}
+				style="width:auto"
+			/></label
 		>
 		{#if filtersActive}
 			<button class="chip" onclick={clearAll}>Clear all</button>
@@ -140,7 +148,13 @@
 			<p class="section-head">{dateGroupLabel(g.date)}</p>
 			{#each g.items as r (r.kind + (r.kind === 'expense' ? r.e.id : r.s.id))}
 				{#if r.kind === 'expense'}
-					<a class="row" href="/ledger/{ledgerId}/expense/{r.e.id}">
+					<a
+						class="row"
+						href={resolve('/ledger/[ledgerId]/expense/[expenseId]', {
+							ledgerId,
+							expenseId: r.e.id
+						})}
+					>
 						<span class="grow">
 							{r.e.title}<br />
 							<span class="muted"
@@ -151,7 +165,13 @@
 						<span class="amount neg">{euro(r.e.amount)}</span>
 					</a>
 				{:else}
-					<a class="row" href="/ledger/{ledgerId}/settle/{r.s.id}/edit">
+					<a
+						class="row"
+						href={resolve('/ledger/[ledgerId]/settle/[settlementId]/edit', {
+							ledgerId,
+							settlementId: r.s.id
+						})}
+					>
 						<span class="grow">
 							↔ Settlement<br />
 							<span class="muted"
@@ -167,4 +187,8 @@
 	{/if}
 </div>
 
-<a class="fab" href="/ledger/{ledgerId}/expense/new" aria-label="New expense">+</a>
+<a
+	class="fab"
+	href={resolve('/ledger/[ledgerId]/expense/new', { ledgerId })}
+	aria-label="New expense">+</a
+>

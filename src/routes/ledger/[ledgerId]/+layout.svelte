@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { resolve } from '$app/paths';
 	import { app } from '$lib/ui/stores/app.svelte';
 	import RecoveryCode from '$lib/ui/components/RecoveryCode.svelte';
 	import ClaimParticipant from '$lib/ui/components/ClaimParticipant.svelte';
@@ -9,7 +10,6 @@
 	const ledgerId = $derived(page.params.ledgerId!);
 	const exists = $derived(app.hasLedger(ledgerId));
 	const ledger = $derived(exists ? app.derived(ledgerId) : undefined);
-	const path = $derived(page.url.pathname);
 	const needsClaim = $derived(exists && app.needsClaim(ledgerId));
 
 	// SC-FR-SYN-3: one glyph + label per sync state.
@@ -34,27 +34,41 @@
 		showRecovery = false;
 	}
 
-	const base = $derived(`/ledger/${ledgerId}`);
+	// Base-path-safe links (SC-ARC-HST-2 / no-navigation-without-resolve).
+	const link = $derived({
+		home: resolve('/'),
+		ledger: resolve('/ledger/[ledgerId]', { ledgerId }),
+		settings: resolve('/ledger/[ledgerId]/settings', { ledgerId }),
+		balances: resolve('/ledger/[ledgerId]/balances', { ledgerId }),
+		labels: resolve('/ledger/[ledgerId]/labels', { ledgerId }),
+		export: resolve('/ledger/[ledgerId]/export', { ledgerId })
+	});
+	// Tab state from the route id, which is independent of any base path.
+	const routeId = $derived(page.route.id ?? '');
 	function tabCurrent(seg: string): 'page' | undefined {
 		if (seg === '') {
-			return path === base || path.startsWith(`${base}/expense`) ? 'page' : undefined;
+			return routeId === '/ledger/[ledgerId]' || routeId.startsWith('/ledger/[ledgerId]/expense')
+				? 'page'
+				: undefined;
 		}
-		return path.startsWith(`${base}/${seg}`) ? 'page' : undefined;
+		return routeId === `/ledger/[ledgerId]/${seg}` ? 'page' : undefined;
 	}
 </script>
 
 {#if !exists}
-	<div class="topbar"><a href="/">‹ Home</a><span class="title">Ledger not found</span></div>
+	<div class="topbar">
+		<a href={link.home}>‹ Home</a><span class="title">Ledger not found</span>
+	</div>
 	<div class="screen empty">
 		<p>This ledger isn’t on this device.</p>
-		<a class="btn" href="/">Back to ledgers</a>
+		<a class="btn" href={link.home}>Back to ledgers</a>
 	</div>
 {:else}
 	<div class="topbar">
-		<a href="/" aria-label="Back to ledgers">‹</a>
+		<a href={link.home} aria-label="Back to ledgers">‹</a>
 		<span class="title">{ledger?.ledgerName}</span>
-		<a href="{base}/settings" title={sync.label} aria-label={sync.label}>{sync.icon}</a>
-		<a href="{base}/settings" aria-label="Settings">⋮</a>
+		<a href={link.settings} title={sync.label} aria-label={sync.label}>{sync.icon}</a>
+		<a href={link.settings} aria-label="Settings">⋮</a>
 	</div>
 
 	{#if needsClaim}
@@ -98,10 +112,10 @@
 		{@render children()}
 
 		<nav class="tabbar">
-			<a href={base} aria-current={tabCurrent('')}>Expenses</a>
-			<a href="{base}/balances" aria-current={tabCurrent('balances')}>Balances</a>
-			<a href="{base}/labels" aria-current={tabCurrent('labels')}>Labels</a>
-			<a href="{base}/export" aria-current={tabCurrent('export')}>Export</a>
+			<a href={link.ledger} aria-current={tabCurrent('')}>Expenses</a>
+			<a href={link.balances} aria-current={tabCurrent('balances')}>Balances</a>
+			<a href={link.labels} aria-current={tabCurrent('labels')}>Labels</a>
+			<a href={link.export} aria-current={tabCurrent('export')}>Export</a>
 		</nav>
 	{/if}
 {/if}

@@ -27,6 +27,21 @@ deliberate, not accidental.
 
 ### Change log within v1 (development)
 
+- 2026-05-17 — Finalised the CSV export format (SC-ARC-FMT-1 item (f),
+  SC-FR-EXR-4). UTF-8; CRLF records with a trailing CRLF; RFC-4180 quoting
+  (quote when a field has `"`, comma, CR or LF; inner quotes doubled);
+  Amount a signed 2-fractional-digit decimal with `.` separator; Note
+  CR/LF flattened to spaces. The fixed eight columns in order are: Date,
+  Description, Amount, Currency, Counterparty, Labels, Note, ExpenseUUID.
+  Currency is the constant EUR (MVP is single-currency, SC-FR-EXP-2; a
+  per-ledger currency would be a separate deliberate format change).
+  First precise definition within schema v1 (the Phase-3 writer was a
+  placeholder), not a change to a shipped format → no version bump.
+  Deliberate, recorded per the file-format governance rule. Not file
+  format: the segment-size threshold was raised 4 KiB → 1 MiB
+  (SC-ARC-LOG-5) — a tunable constant that does not affect
+  interoperability (SRS Q2).
+
 - 2026-05-17 — Defined the on-disk ledger folder layout (SC-ARC-FMT-1 items
   (a) + (b), SC-FR-LED-3, SC-ARC-LOG-4): a ledger folder contains a plaintext
   `ledger.json` (`ledgerId`, `schemaVersion`, `createdAt`, `encrypted:true`,

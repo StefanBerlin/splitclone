@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { app } from '$lib/ui/stores/app.svelte';
 	import { relativeTime } from '$lib/ui/format/format';
 
@@ -21,7 +22,11 @@
 	{:else}
 		<p class="section-head">Your ledgers</p>
 		{#each ledgers as l (l.id)}
-			<a class="row card" href="/ledger/{l.id}" style="margin-bottom: var(--space-3)">
+			<a
+				class="row card"
+				href={resolve('/ledger/[ledgerId]', { ledgerId: l.id })}
+				style="margin-bottom: var(--space-3)"
+			>
 				<span class="grow">
 					<strong>{l.name}</strong><br />
 					<span class="muted"
@@ -33,8 +38,8 @@
 		{/each}
 	{/if}
 
-	<a class="btn btn-primary btn-block" href="/ledger/new">+ Create a new ledger</a>
-	<a class="btn btn-block" href="/ledger/join">Join with a code</a>
+	<a class="btn btn-primary btn-block" href={resolve('/ledger/new')}>+ Create a new ledger</a>
+	<a class="btn btn-block" href={resolve('/ledger/join')}>Join with a code</a>
 
 	<p class="muted" style="margin-top: var(--space-8); font-size: 13px">
 		Phase 3 — UI shell on in-memory demo data. No persistence, network or encryption yet.

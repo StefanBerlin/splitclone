@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { app } from '$lib/ui/stores/app.svelte';
 	import RecoveryCode from '$lib/ui/components/RecoveryCode.svelte';
 
@@ -27,7 +28,7 @@
 	function done() {
 		if (!acknowledged || !createdId) return;
 		app.acknowledgeRecovery(createdId);
-		goto(`/ledger/${createdId}`);
+		goto(resolve('/ledger/[ledgerId]', { ledgerId: createdId }));
 	}
 </script>
 
@@ -35,7 +36,7 @@
 
 {#if step === 'settings'}
 	<div class="topbar">
-		<a href="/">‹ Cancel</a>
+		<a href={resolve('/')}>‹ Cancel</a>
 		<span class="title">New ledger</span>
 		<button onclick={create} disabled={!canCreate || creating}>
 			{creating ? 'Creating…' : 'Create'}

@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { app } from '$lib/ui/stores/app.svelte';
-	import { project, formatMoney, type ExportMode } from '$lib/domain';
+	import { project, type ExportMode } from '$lib/domain';
+	import { toCsv, LEDGER_CURRENCY } from '$lib/export/csv';
+	import { applyExportFilter } from '$lib/export/filter';
 	import { euro } from '$lib/ui/format/format';
 
 	const ledgerId = $derived(page.params.ledgerId!);
@@ -17,12 +19,23 @@
 		}
 	});
 
-	const rows = $derived(subject ? project(ledger, subject, mode) : []);
+	// SC-FR-EXR-5: honour the date-range + label filter active in the list.
+	const filter = $derived(app.filter(ledgerId));
+	const filterLabelNames = $derived(
+		filter.labels.map((id) => ledger.labels.get(id)?.name).filter((n): n is string => !!n)
+	);
+	const rows = $derived(
+		subject
+			? applyExportFilter(project(ledger, subject, mode), {
+					from: filter.from,
+					to: filter.to,
+					labels: filterLabelNames
+				})
+			: []
+	);
 	const total = $derived(rows.reduce((s, r) => s + r.amount, 0n));
+	const filterActive = $derived(app.filterActive(ledgerId));
 
-	function field(v: string): string {
-		return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-	}
 	function slug(s: string): string {
 		return s
 			.toLowerCase()
@@ -30,29 +43,49 @@
 			.replace(/^-|-$/g, '');
 	}
 
-	function exportCsv() {
-		const header = 'Date,Description,Amount,Currency,Counterparty,Labels,Note,SourceId';
-		const lines = rows.map((r) =>
-			[
-				r.date,
-				field(r.description),
-				formatMoney(r.amount),
-				'EUR',
-				field(r.counterparties.join(', ')),
-				field(r.labels.join('; ')),
-				field(r.note ?? ''),
-				r.sourceId
-			].join(',')
-		);
-		const csv = [header, ...lines].join('\r\n');
-		const blob = new Blob([csv], { type: 'text/csv' });
-		const ts = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '').slice(0, 15);
+	function fileName(): string {
+		const d = new Date();
+		const p = (n: number) => String(n).padStart(2, '0');
+		const ts = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 		const sName = ledger.participants.get(subject)?.name ?? subject;
+		return `splitclone_${slug(ledger.ledgerName)}_${slug(sName)}_${mode}_${ts}.csv`;
+	}
+
+	function csvFile(): File {
+		return new File([toCsv(rows, LEDGER_CURRENCY)], fileName(), {
+			type: 'text/csv;charset=utf-8'
+		});
+	}
+
+	function download() {
+		const file = csvFile();
 		const a = document.createElement('a');
-		a.href = URL.createObjectURL(blob);
-		a.download = `splitclone_${slug(ledger.ledgerName)}_${slug(sName)}_${mode}_${ts}.csv`;
+		a.href = URL.createObjectURL(file);
+		a.download = file.name;
 		a.click();
 		URL.revokeObjectURL(a.href);
+	}
+
+	// SC-FR-EXR-6: where the Web Share API supports files (notably iOS Safari)
+	// additionally offer the OS share sheet.
+	let canShare = $state(false);
+	$effect(() => {
+		try {
+			canShare =
+				typeof navigator !== 'undefined' &&
+				!!navigator.canShare &&
+				navigator.canShare({ files: [new File(['x'], 'x.csv', { type: 'text/csv' })] });
+		} catch {
+			canShare = false;
+		}
+	});
+
+	async function share() {
+		try {
+			await navigator.share({ files: [csvFile()], title: 'SplitClone export' });
+		} catch {
+			/* user cancelled / share unavailable → the download button stays */
+		}
 	}
 </script>
 
@@ -80,13 +113,19 @@
 		>
 	</div>
 
+	{#if filterActive}
+		<p class="muted" style="font-size:13px">
+			ⓘ The list filter is applied to this export
+			{#if filter.from || filter.to}· {filter.from || '…'} → {filter.to || '…'}{/if}
+			{#if filterLabelNames.length}· labels: {filterLabelNames.join(', ')}{/if}
+		</p>
+	{/if}
+
 	<p class="section-head">Preview</p>
 	{#if rows.length === 0}
 		<p class="muted">No rows for this selection.</p>
 	{:else}
-		<p class="muted">
-			{rows.length} rows · net {euro(total)}
-		</p>
+		<p class="muted">{rows.length} rows · net {euro(total)}</p>
 		<div class="dl">
 			{#each rows.slice(0, 8) as r (r.sourceId)}
 				<dt>{r.date} {r.description}</dt>
@@ -101,10 +140,16 @@
 	<button
 		class="btn btn-primary btn-block"
 		style="margin-top:var(--space-6)"
-		onclick={exportCsv}
-		disabled={rows.length === 0}>Export CSV</button
+		onclick={download}
+		disabled={rows.length === 0}>Download CSV</button
 	>
-	<p class="muted" style="font-size:13px">
-		Phase 3 uses a basic CSV writer; the RFC-4180 formatter and Web-Share delivery land in Phase 9.
-	</p>
+	{#if canShare}
+		<button
+			class="btn btn-block"
+			style="margin-top:var(--space-2)"
+			onclick={share}
+			disabled={rows.length === 0}>Share via…</button
+		>
+	{/if}
+	<p class="muted" style="font-size:13px">RFC 4180 CSV, UTF-8 · {LEDGER_CURRENCY}</p>
 </div>

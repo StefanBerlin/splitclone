@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { app } from '$lib/ui/stores/app.svelte';
 	import type { JoinCodePreview } from '$lib/ui/stores/app.svelte';
 
@@ -27,7 +28,7 @@
 		joinError = '';
 		try {
 			const r = await app.joinViaOneDrive(code);
-			if (r.ok && r.ledgerId) goto(`/ledger/${r.ledgerId}`);
+			if (r.ok && r.ledgerId) goto(resolve('/ledger/[ledgerId]', { ledgerId: r.ledgerId }));
 			else joinError = r.error ?? 'Could not join.';
 		} finally {
 			checking = false;
@@ -38,7 +39,7 @@
 <svelte:head><title>Join a ledger</title></svelte:head>
 
 <div class="topbar">
-	<a href="/">‹ Cancel</a>
+	<a href={resolve('/')}>‹ Cancel</a>
 	<span class="title">Join a ledger</span>
 	<span></span>
 </div>
@@ -96,8 +97,8 @@
 		</div>
 	{:else if !app.connected}
 		<div class="card">
-			<a href="/auth/start">Connect OneDrive</a> to actually join a shared ledger. The owner must have
-			shared its folder with your Microsoft account first.
+			<a href={resolve('/auth/start')}>Connect OneDrive</a> to actually join a shared ledger. The owner
+			must have shared its folder with your Microsoft account first.
 		</div>
 	{/if}
 </div>

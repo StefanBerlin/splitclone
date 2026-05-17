@@ -66,6 +66,15 @@ export interface JoinCodePreview {
 	error?: string;
 }
 
+/** Execution-date range + label-id filter (SC-FR-HIS-4/5). */
+export interface LedgerFilter {
+	from: string;
+	to: string;
+	labels: UUID[];
+}
+
+const EMPTY_FILTER: Readonly<LedgerFilter> = Object.freeze({ from: '', to: '', labels: [] });
+
 const LEDGERS_KEY = 'ledgers';
 const RECOVERY_ACK_KEY = 'recoveryAck';
 
@@ -94,6 +103,10 @@ class AppStore {
 	private autoTimers: Record<UUID, ReturnType<typeof setTimeout>> = {};
 	private syncing = new Set<UUID>();
 	private listenersInstalled = false;
+	/** Per-ledger history filter (SC-FR-HIS-4/5), shared so the export route
+	 *  can honour the filter active in the list at export time (SC-FR-EXR-5).
+	 *  Replaced immutably (never mutated in place) like `logs`. */
+	private _filters = $state<Record<UUID, LedgerFilter>>({});
 
 	constructor() {
 		void this.init();
@@ -202,6 +215,36 @@ class AppStore {
 		this.keys[ledgerId] = key;
 		this.keyMeta[ledgerId] = { joinCode, fingerprint, root };
 		return key;
+	}
+
+	// ---- History filter, shared list↔export (SC-FR-HIS-4/5, SC-FR-EXR-5) ---
+
+	/** Pure read: the active filter for a ledger (default = no filter). */
+	filter(ledgerId: UUID): Readonly<LedgerFilter> {
+		return this._filters[ledgerId] ?? EMPTY_FILTER;
+	}
+
+	filterActive(ledgerId: UUID): boolean {
+		const f = this.filter(ledgerId);
+		return f.from !== '' || f.to !== '' || f.labels.length > 0;
+	}
+
+	setFilter(ledgerId: UUID, patch: Partial<LedgerFilter>): void {
+		const cur = this.filter(ledgerId);
+		this._filters = { ...this._filters, [ledgerId]: { ...cur, ...patch } };
+	}
+
+	toggleFilterLabel(ledgerId: UUID, labelId: UUID): void {
+		const cur = this.filter(ledgerId);
+		this.setFilter(ledgerId, {
+			labels: cur.labels.includes(labelId)
+				? cur.labels.filter((x) => x !== labelId)
+				: [...cur.labels, labelId]
+		});
+	}
+
+	clearFilter(ledgerId: UUID): void {
+		this._filters = { ...this._filters, [ledgerId]: { from: '', to: '', labels: [] } };
 	}
 
 	/** Re-author seed events onto this device so claim detection works. */

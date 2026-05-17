@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { resolve } from '$app/paths';
 	import { oauthConfig } from '$lib/auth/config';
 	import { buildAuthorizeUrl, createPkcePair, randomState } from '$lib/auth/pkce';
 
@@ -24,7 +25,7 @@
 <div class="screen empty">
 	{#if error}
 		<p>{error}</p>
-		<a class="btn" href="/">Back</a>
+		<a class="btn" href={resolve('/')}>Back</a>
 	{:else}
 		<p>Redirecting to Microsoft sign-in…</p>
 	{/if}

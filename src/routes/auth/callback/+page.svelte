@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { oauthConfig } from '$lib/auth/config';
 	import { exchangeCode } from '$lib/auth/pkce';
@@ -31,7 +32,7 @@
 			await adoptTokens(await exchangeCode(cfg, code, verifier));
 			await app.refreshConnection();
 			done = true;
-			goto('/');
+			goto(resolve('/'));
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);
 		}
@@ -44,7 +45,7 @@
 	{#if error}
 		<p>Could not connect to OneDrive:</p>
 		<p class="muted">{error}</p>
-		<a class="btn" href="/">Back</a>
+		<a class="btn" href={resolve('/')}>Back</a>
 	{:else if done}
 		<p>Connected. Redirecting…</p>
 	{:else}

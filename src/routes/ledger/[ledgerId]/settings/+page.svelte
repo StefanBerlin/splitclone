@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { app } from '$lib/ui/stores/app.svelte';
 	import RecoveryCode from '$lib/ui/components/RecoveryCode.svelte';
 
@@ -60,14 +61,14 @@
 		)
 			return;
 		app.removeLedger(ledgerId);
-		goto('/');
+		goto(resolve('/'));
 	}
 </script>
 
 <svelte:head><title>Ledger settings</title></svelte:head>
 
 <div class="topbar">
-	<a href="/ledger/{ledgerId}">‹ {ledger.ledgerName}</a>
+	<a href={resolve('/ledger/[ledgerId]', { ledgerId })}>‹ {ledger.ledgerName}</a>
 	<span class="title">Ledger settings</span>
 </div>
 
@@ -96,7 +97,7 @@
 		<p class="muted" style="font-size:13px">
 			Not connected. Connect OneDrive to sync this ledger across devices and share it with others.
 		</p>
-		<a class="btn btn-primary btn-block" href="/auth/start">☁ Connect OneDrive</a>
+		<a class="btn btn-primary btn-block" href={resolve('/auth/start')}>☁ Connect OneDrive</a>
 	{:else}
 		<p>
 			{#if app.syncState === 'syncing'}

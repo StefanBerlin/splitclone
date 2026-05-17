@@ -93,13 +93,11 @@ export default defineConfig(
 	},
 	{
 		rules: {
-			// TODO(Phase 6): re-enable. This rule enforces resolve() so links
-			// stay correct under a deployment base path (e.g. GitHub Pages
-			// subpath). Under "path A" the MVP runs only at the domain root
-			// with no base path, so it is off until a base path is introduced
-			// in Phase 6, at which point every internal link/goto must be
-			// wrapped in resolve() from '$app/paths'.
-			'svelte/no-navigation-without-resolve': 'off'
+			// Re-enabled in Phase 9 (v1.0 hardening): every internal link/goto
+			// goes through resolve() from '$app/paths' so the app stays correct
+			// under any deployment base path (e.g. a GitHub Pages subpath),
+			// without baking a base path into the code.
+			'svelte/no-navigation-without-resolve': 'error'
 		}
 	}
 );

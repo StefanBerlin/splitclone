@@ -30,10 +30,13 @@ only register once.)
 2. **Name:** anything, e.g. `SplitClone`.
 3. **Supported account types:** *Personal Microsoft accounts only*
    (a OneDrive personal / family subscription is a personal MSA).
-4. **Redirect URI:** platform **Single-page application (SPA)**, value
-   `http://localhost:5173/auth/callback` for local dev. Add your deployed
-   URL later too, e.g. `https://<you>.github.io/splitclone/auth/callback`.
-   This list is per *origin*, **not** per person — every user hitting the
+4. **Redirect URI:** platform **Single-page application (SPA)**. The app
+   is served under the `/splitclone` base path (GitHub Pages project
+   site), and `pnpm dev` mirrors that, so register **both**:
+   `http://localhost:5173/splitclone/auth/callback` (dev) and the deployed
+   `https://<you>.github.io/splitclone/auth/callback`. Keep both — don't
+   replace localhost. This list is per *origin*, **not** per person — every
+   user hitting the
    same deployed URL shares the same redirect URI, so you add one entry per
    place the app is served from, never one per user. It must match the URL
    the app is actually loaded from character-for-character (scheme, host,

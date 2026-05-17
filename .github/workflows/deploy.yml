@@ -1,0 +1,80 @@
+name: Deploy to GitHub Pages
+
+# SplitClone is a client-only static SPA (SC-ARC-HST-1). This builds the
+# adapter-static output and publishes it to a GitHub Pages *project* site
+# at https://stefanberlin.github.io/splitclone/ (see project memory:
+# deploy target — paths.base = '/splitclone' is set in svelte.config.js).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Allow the deploy job to publish to Pages; no write access to repo contents.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two deploys at once; let an in-progress run finish (don't cancel
+# a publish midway).
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Project smoke gate — same bar as local (format/lint/typecheck/unit).
+      # e2e (Playwright) is intentionally excluded here; it is heavier and
+      # not part of the smoke gate.
+      - name: Lint & format check
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm check
+
+      - name: Unit tests
+        run: pnpm test:unit -- --run
+
+      - name: Build
+        env:
+          # PKCE SPA client id — not a secret. Set as a repo Variable:
+          # Settings > Secrets and variables > Actions > Variables.
+          # If unset, the build still succeeds (auth/config.ts tolerates a
+          # missing id) but OneDrive sign-in will not work on the live site.
+          PUBLIC_MS_CLIENT_ID: ${{ vars.PUBLIC_MS_CLIENT_ID }}
+        run: pnpm build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

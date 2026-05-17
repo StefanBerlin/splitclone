@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { app } from '$lib/ui/stores/app.svelte';
 	import { parseMoney, splitEqually, type ExpenseInput } from '$lib/domain';
 	import { euro } from '$lib/ui/format/format';
@@ -85,13 +86,13 @@
 		};
 		if (expenseId) {
 			app.dispatch(ledgerId, 'ExpenseUpdated', { expenseId, input });
-			goto(`/ledger/${ledgerId}/expense/${expenseId}`);
+			goto(resolve('/ledger/[ledgerId]/expense/[expenseId]', { ledgerId, expenseId }));
 		} else {
 			app.dispatch(ledgerId, 'ExpenseCreated', {
 				expenseId: crypto.randomUUID(),
 				input
 			});
-			goto(`/ledger/${ledgerId}`);
+			goto(resolve('/ledger/[ledgerId]', { ledgerId }));
 		}
 	}
 
@@ -99,7 +100,7 @@
 		if (!expenseId) return;
 		if (!confirm('Delete this expense? It disappears for everyone after sync.')) return;
 		app.dispatch(ledgerId, 'ExpenseDeleted', { expenseId });
-		goto(`/ledger/${ledgerId}`);
+		goto(resolve('/ledger/[ledgerId]', { ledgerId }));
 	}
 
 	function name(id: string): string {
@@ -108,8 +109,10 @@
 </script>
 
 <div class="topbar">
-	<a href={expenseId ? `/ledger/${ledgerId}/expense/${expenseId}` : `/ledger/${ledgerId}`}
-		>‹ Cancel</a
+	<a
+		href={expenseId
+			? resolve('/ledger/[ledgerId]/expense/[expenseId]', { ledgerId, expenseId })
+			: resolve('/ledger/[ledgerId]', { ledgerId })}>‹ Cancel</a
 	>
 	<span class="title">{expenseId ? 'Edit expense' : 'New expense'}</span>
 	<button onclick={save} disabled={!canSave}>Save</button>

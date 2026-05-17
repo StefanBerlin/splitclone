@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { resolve } from '$app/paths';
+	import type { ResolvedPathname } from '$app/types';
 	import { app } from '$lib/ui/stores/app.svelte';
 	import { balancesFor } from '$lib/domain';
 	import { euro } from '$lib/ui/format/format';
@@ -16,11 +18,14 @@
 	function name(id: string): string {
 		return ledger.participants.get(id)?.name ?? id;
 	}
-	function settleHref(other: string, amount: bigint): string {
+	// resolve() applies the base path; the prefill query is appended after it
+	// (orthogonal to base-path safety, so the ResolvedPathname brand is kept).
+	function settleHref(other: string, amount: bigint): ResolvedPathname {
 		const abs = amount < 0n ? -amount : amount;
 		// You owe -> you pay them; they owe you -> they pay you.
 		const [from, to] = amount > 0n ? [meId, other] : [other, meId];
-		return `/ledger/${ledgerId}/settle/new?from=${from}&to=${to}&amount=${abs}`;
+		const q = new URLSearchParams({ from: from ?? '', to: to ?? '', amount: String(abs) });
+		return `${resolve('/ledger/[ledgerId]/settle/new', { ledgerId })}?${q}` as ResolvedPathname;
 	}
 </script>
 
@@ -33,7 +38,9 @@
 		<div class="empty">
 			<p style="font-size:28px">✓</p>
 			<p>All settled up.</p>
-			<a class="btn" href="/ledger/{ledgerId}/settle/new">+ Record settlement</a>
+			<a class="btn" href={resolve('/ledger/[ledgerId]/settle/new', { ledgerId })}
+				>+ Record settlement</a
+			>
 		</div>
 	{:else}
 		{#if youOwe.length}
@@ -61,8 +68,10 @@
 			{net > 0n ? 'You are owed ' : net < 0n ? 'You owe ' : 'Even: '}{euro(net < 0n ? -net : net)}
 		</p>
 
-		<a class="btn btn-block" href="/ledger/{ledgerId}/settle/new" style="margin-top:var(--space-6)"
-			>+ Record settlement</a
+		<a
+			class="btn btn-block"
+			href={resolve('/ledger/[ledgerId]/settle/new', { ledgerId })}
+			style="margin-top:var(--space-6)">+ Record settlement</a
 		>
 	{/if}
 </div>
