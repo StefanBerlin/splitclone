@@ -49,9 +49,12 @@ Mitigation actually shipped:
   that a listed asset is unmodified.
 - **Strict CSP** (`kit.csp`, hash mode): `script-src 'self'` with
   SvelteKit's own inline bootstrap hashed (no `'unsafe-inline'`),
-  `object-src 'none'`, `base-uri 'self'`, `frame-ancestors 'none'`,
-  `connect-src` limited to Microsoft Graph + login. A host that injects
-  foreign script cannot execute it.
+  `object-src 'none'`, `base-uri 'self'`, `frame-ancestors 'none'`.
+  `connect-src` allows Microsoft Graph + login **and** the Microsoft
+  content hosts Graph redirects file I/O to (`*.sharepoint.com`,
+  `*.1drv.com`, `my.microsoftpersonalcontent.com`, `*.svc.ms`) —
+  breadth there is an accepted weaker control; `script-src` stays
+  locked, so a host that injects foreign script still cannot execute it.
 
 Re-evaluating true per-chunk SRI is deferred to a tooling change that can
 emit it without a runtime dependency (tracked alongside the other deferred
