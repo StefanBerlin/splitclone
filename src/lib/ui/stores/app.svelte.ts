@@ -27,7 +27,7 @@ import { appendEvent, deleteLedgerSegments, loadLedgerEvents } from '$lib/storag
 import { isOneDriveConfigured } from '$lib/auth/config';
 import { getAccessToken, isConnected, disconnect } from '$lib/auth/token-store';
 import { OneDriveGraphProvider, type RootRef } from '$lib/storage/providers/onedrive-graph';
-import { listSharedFolders } from '$lib/storage/providers/shared';
+import { listOwnLedgerFolders, listSharedFolders } from '$lib/storage/providers/shared';
 import { checkRemoteLedger, syncLedger } from '$lib/sync/engine';
 import { DEMO_LEDGER_ID, seedEvents } from './seed';
 
@@ -565,9 +565,16 @@ class AppStore {
 		}
 		const raw = decoded.raw;
 		try {
-			const shared = await listSharedFolders(getAccessToken);
-			for (const folder of shared) {
-				const provider = new OneDriveGraphProvider(getAccessToken, folder.root);
+			// Own folders first — same-account multi-device, or re-adopting
+			// your own ledger after local data loss, needs no sharing. Then
+			// folders other people shared with this account.
+			const [own, shared] = await Promise.all([
+				listOwnLedgerFolders(getAccessToken),
+				listSharedFolders(getAccessToken)
+			]);
+			const roots: RootRef[] = [...own.map((f) => f.root), ...shared.map((f) => f.root)];
+			for (const root of roots) {
+				const provider = new OneDriveGraphProvider(getAccessToken, root);
 				try {
 					const meta = await checkRemoteLedger(provider, raw);
 					// Match → adopt this ledger.
@@ -576,9 +583,9 @@ class AppStore {
 					const fingerprint = await dataKeyFingerprint(raw);
 					const joinCode = await encodeJoinCode(raw);
 					raw.fill(0);
-					await keyPut({ ledgerId: id, key, fingerprint, joinCode, root: folder.root });
+					await keyPut({ ledgerId: id, key, fingerprint, joinCode, root });
 					this.keys[id] = key;
-					this.keyMeta[id] = { joinCode, fingerprint, root: folder.root };
+					this.keyMeta[id] = { joinCode, fingerprint, root };
 					this.logs[id] = [];
 					await this.registerLedger(id);
 					await this.syncNow(id);
@@ -589,7 +596,8 @@ class AppStore {
 			}
 			return {
 				ok: false,
-				error: 'No shared ledger matches this code. Ask the owner to share the folder with you.'
+				error:
+					'No ledger matches this code. On a different account, ask the owner to share the ledger folder with you; on the same account, make sure the creating device has synced at least once.'
 			};
 		} catch (err) {
 			return { ok: false, error: describeError(err) };

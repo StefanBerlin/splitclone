@@ -32,7 +32,7 @@ export type RootRef =
 
 export type TokenGetter = () => Promise<string | null>;
 
-const APP_FOLDER = 'Apps/SplitClone';
+export const APP_FOLDER = 'Apps/SplitClone';
 
 interface DriveItem {
 	name: string;

@@ -7,11 +7,16 @@
  */
 import { GRAPH_BASE } from '$lib/auth/config';
 import { TransportError } from '../provider';
-import type { RootRef, TokenGetter } from './onedrive-graph';
+import { APP_FOLDER, type RootRef, type TokenGetter } from './onedrive-graph';
 
 export interface SharedFolderRef {
 	name: string;
 	root: Extract<RootRef, { kind: 'shared' }>;
+}
+
+export interface OwnFolderRef {
+	name: string;
+	root: Extract<RootRef, { kind: 'own' }>;
 }
 
 interface SharedItem {
@@ -49,6 +54,34 @@ export async function listSharedFolders(getToken: TokenGetter): Promise<SharedFo
 			name: it.name ?? '',
 			root: { kind: 'shared', driveId, itemId }
 		});
+	}
+	return out;
+}
+
+/**
+ * Ledger folders in the signed-in user's OWN drive (`Apps/SplitClone/*`).
+ * This is what makes same-account multi-device work: the creator's ledger
+ * lives in their own drive, not under "shared with me", so joining on a
+ * second device of the same account must scan here too. Also covers
+ * re-adopting your own ledger after local data loss (SC-NFR-OFF-1).
+ */
+export async function listOwnLedgerFolders(getToken: TokenGetter): Promise<OwnFolderRef[]> {
+	const token = await getToken();
+	if (!token) return [];
+	let res: Response;
+	try {
+		res = await fetch(`${GRAPH_BASE}/me/drive/root:/${APP_FOLDER}:/children?$top=200`, {
+			headers: { Authorization: `Bearer ${token}` }
+		});
+	} catch (e) {
+		throw new TransportError('Network error listing your OneDrive folders', e);
+	}
+	if (!res.ok) return []; // 404 = app folder not created yet → nothing to join
+	const json = (await res.json()) as { value: { name?: string; folder?: unknown }[] };
+	const out: OwnFolderRef[] = [];
+	for (const it of json.value) {
+		if (!it.folder || !it.name) continue;
+		out.push({ name: it.name, root: { kind: 'own', ledgerId: it.name } });
 	}
 	return out;
 }
