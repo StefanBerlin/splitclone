@@ -126,11 +126,13 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 12px;
+		margin: var(--space-3) var(--space-4) 0;
 		padding: 10px 16px;
-		background: #fff4e5;
-		color: #8a4b00;
+		background: color-mix(in srgb, var(--warning) 18%, transparent);
+		color: var(--warning);
 		font-size: 0.85rem;
-		border-bottom: 1px solid #f0d9b5;
+		border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
+		border-radius: var(--radius-sm);
 	}
 	.recovery-banner .link {
 		background: none;
@@ -144,16 +146,20 @@
 	.overlay {
 		position: fixed;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.5);
+		background: rgba(0, 0, 0, 0.6);
+		backdrop-filter: blur(4px);
+		-webkit-backdrop-filter: blur(4px);
 		display: grid;
 		place-items: center;
 		padding: 20px;
 		z-index: 50;
 	}
 	.sheet {
-		background: var(--surface, #fff);
-		border-radius: 12px;
-		padding: 20px;
+		background: var(--bg);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		box-shadow: var(--shadow);
+		padding: var(--space-6);
 		max-width: 360px;
 		width: 100%;
 		max-height: 90vh;

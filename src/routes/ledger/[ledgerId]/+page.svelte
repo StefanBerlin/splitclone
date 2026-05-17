@@ -155,6 +155,7 @@
 							expenseId: r.e.id
 						})}
 					>
+						<span class="glyph">🧾</span>
 						<span class="grow">
 							{r.e.title}<br />
 							<span class="muted"
@@ -172,8 +173,9 @@
 							settlementId: r.s.id
 						})}
 					>
+						<span class="glyph">↔</span>
 						<span class="grow">
-							↔ Settlement<br />
+							Settlement<br />
 							<span class="muted"
 								>{pname(r.s.fromParticipantId)} → {pname(r.s.toParticipantId)}{#if r.s.note}
 									· {r.s.note}{/if}</span

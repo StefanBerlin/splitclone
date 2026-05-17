@@ -152,6 +152,7 @@
 	<p class="section-head">Participants</p>
 	{#each [...ledger.participants.values()] as p (p.id)}
 		<div class="row">
+			<span class="glyph">{(p.name.trim()[0] ?? '?').toUpperCase()}</span>
 			<span class="grow">
 				{p.name}{#if p.id === meId}
 					<span class="muted">(you)</span>{/if}<br />

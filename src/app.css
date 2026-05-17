@@ -1,18 +1,31 @@
 /*
- * Design tokens from docs/mockups/00-style-baseline.md.
- * Light values on :root, dark values under prefers-color-scheme: dark.
- * A manual override sets [data-theme] on <html> (wired up in a later phase).
+ * Visual theme (1.0 restyle): dark "violet glass + mint CTA" look.
+ * Pure presentation — every screen renders through these tokens and the
+ * utility classes below, so nothing about behaviour, routing or markup
+ * changes. The base palette is the dark design (the app's identity);
+ * an explicit light variant and OS-light fallback are kept so the
+ * Settings theme toggle (system / light / dark) still works.
+ *
+ * Original light baseline: docs/mockups/00-style-baseline.md.
  */
 :root {
-	--bg: #ffffff;
-	--surface: #f7f7f8;
-	--text: #111418;
-	--text-muted: #5a6068;
-	--accent: #0a84ff;
-	--positive: #1f9d55;
-	--negative: #c83a2e;
-	--warning: #b45309;
-	--border: #e3e5e8;
+	/* dark = canonical look */
+	--bg: #16131f;
+	--bg-grad-1: #1d1830;
+	--bg-grad-2: #141019;
+	--glow: rgba(139, 123, 216, 0.28);
+	--surface: rgba(255, 255, 255, 0.055);
+	--surface-strong: rgba(255, 255, 255, 0.09);
+	--text: #f3f1fb;
+	--text-muted: #a6a1c4;
+	--accent: #25e0bd; /* mint CTA */
+	--accent-ink: #06241d; /* readable text on the mint accent */
+	--accent-2: #8b7bd8; /* violet highlight / gradients */
+	--positive: #3dd9a4;
+	--negative: #ff6b6b;
+	--warning: #f6c177;
+	--border: rgba(255, 255, 255, 0.09);
+	--ring: rgba(37, 224, 189, 0.55);
 
 	--space-1: 4px;
 	--space-2: 8px;
@@ -22,47 +35,91 @@
 	--space-8: 32px;
 	--space-12: 48px;
 
+	--radius: 22px;
+	--radius-sm: 14px;
+	--shadow: 0 20px 45px -22px rgba(0, 0, 0, 0.7);
+	--shadow-glow: 0 14px 30px -10px rgba(37, 224, 189, 0.45);
+
 	--font-body: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 
-	color-scheme: light dark;
+	/* Aliases for legacy token names used in a few component-scoped styles.
+	   Lazily resolved at use, so they track the active theme automatically
+	   (no need to redeclare per palette). */
+	--surface-2: var(--surface-strong);
+	--danger: var(--negative);
+	--ok: var(--positive);
+
+	color-scheme: dark;
 }
 
-@media (prefers-color-scheme: dark) {
+/* Light palette: used by an OS set to light, unless overridden below. */
+@media (prefers-color-scheme: light) {
 	:root {
-		--bg: #111418;
-		--surface: #1a1d22;
-		--text: #eaeaec;
-		--text-muted: #8a9099;
-		--accent: #5ea7ff;
-		--positive: #56c08d;
-		--negative: #f0746a;
-		--warning: #f3a755;
-		--border: #272b30;
+		--bg: #f4f3fb;
+		--bg-grad-1: #efeefb;
+		--bg-grad-2: #f7f5ff;
+		--glow: rgba(139, 123, 216, 0.22);
+		--surface: rgba(255, 255, 255, 0.85);
+		--surface-strong: #ffffff;
+		--text: #1d1830;
+		--text-muted: #6b6688;
+		--accent: #07b89a;
+		--accent-ink: #ffffff;
+		--accent-2: #6d5cc6;
+		--positive: #18996b;
+		--negative: #d6453c;
+		--warning: #b4720a;
+		--border: rgba(29, 24, 48, 0.1);
+		--ring: rgba(7, 184, 154, 0.5);
+		--shadow: 0 18px 40px -24px rgba(60, 50, 110, 0.4);
+		--shadow-glow: 0 14px 30px -12px rgba(7, 184, 154, 0.35);
+		color-scheme: light;
 	}
 }
 
+/* Explicit toggle (Settings → Theme) always wins over the OS. */
 [data-theme='light'] {
-	--bg: #ffffff;
-	--surface: #f7f7f8;
-	--text: #111418;
-	--text-muted: #5a6068;
-	--accent: #0a84ff;
-	--positive: #1f9d55;
-	--negative: #c83a2e;
-	--warning: #b45309;
-	--border: #e3e5e8;
+	--bg: #f4f3fb;
+	--bg-grad-1: #efeefb;
+	--bg-grad-2: #f7f5ff;
+	--glow: rgba(139, 123, 216, 0.22);
+	--surface: rgba(255, 255, 255, 0.85);
+	--surface-strong: #ffffff;
+	--text: #1d1830;
+	--text-muted: #6b6688;
+	--accent: #07b89a;
+	--accent-ink: #ffffff;
+	--accent-2: #6d5cc6;
+	--positive: #18996b;
+	--negative: #d6453c;
+	--warning: #b4720a;
+	--border: rgba(29, 24, 48, 0.1);
+	--ring: rgba(7, 184, 154, 0.5);
+	--shadow: 0 18px 40px -24px rgba(60, 50, 110, 0.4);
+	--shadow-glow: 0 14px 30px -12px rgba(7, 184, 154, 0.35);
+	color-scheme: light;
 }
 
 [data-theme='dark'] {
-	--bg: #111418;
-	--surface: #1a1d22;
-	--text: #eaeaec;
-	--text-muted: #8a9099;
-	--accent: #5ea7ff;
-	--positive: #56c08d;
-	--negative: #f0746a;
-	--warning: #f3a755;
-	--border: #272b30;
+	--bg: #16131f;
+	--bg-grad-1: #1d1830;
+	--bg-grad-2: #141019;
+	--glow: rgba(139, 123, 216, 0.28);
+	--surface: rgba(255, 255, 255, 0.055);
+	--surface-strong: rgba(255, 255, 255, 0.09);
+	--text: #f3f1fb;
+	--text-muted: #a6a1c4;
+	--accent: #25e0bd;
+	--accent-ink: #06241d;
+	--accent-2: #8b7bd8;
+	--positive: #3dd9a4;
+	--negative: #ff6b6b;
+	--warning: #f6c177;
+	--border: rgba(255, 255, 255, 0.09);
+	--ring: rgba(37, 224, 189, 0.55);
+	--shadow: 0 20px 45px -22px rgba(0, 0, 0, 0.7);
+	--shadow-glow: 0 14px 30px -10px rgba(37, 224, 189, 0.45);
+	color-scheme: dark;
 }
 
 * {
@@ -76,27 +133,41 @@ body {
 }
 
 body {
-	background: var(--bg);
+	min-height: 100dvh;
 	color: var(--text);
 	font-family: var(--font-body);
 	font-size: 17px;
-	line-height: 1.4;
+	line-height: 1.45;
 	-webkit-text-size-adjust: 100%;
+	-webkit-font-smoothing: antialiased;
+	/* Soft violet glow over a deep gradient — the reference's backdrop. */
+	background:
+		radial-gradient(120% 80% at 85% -10%, var(--glow) 0%, transparent 55%),
+		linear-gradient(180deg, var(--bg-grad-1) 0%, var(--bg-grad-2) 60%, var(--bg) 100%) fixed;
 }
 
 a {
 	color: var(--accent);
+	text-decoration: none;
 }
 
-/* --- App-shell utilities (Phase 3). Mockup: docs/mockups/00-style-baseline.md --- */
+:focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: 2px;
+	border-radius: 6px;
+}
+
+::selection {
+	background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* --- App-shell utilities. Class names unchanged from the Phase 3 shell --- */
 .screen {
 	max-width: 40rem;
 	margin: 0 auto;
-	padding: var(--space-4);
-	/* Keep body content out from under the notch in landscape. */
+	padding: var(--space-6) var(--space-4) 96px;
 	padding-left: calc(var(--space-4) + env(safe-area-inset-left));
 	padding-right: calc(var(--space-4) + env(safe-area-inset-right));
-	padding-bottom: 88px; /* clear the tab bar */
 }
 
 .topbar {
@@ -106,32 +177,41 @@ a {
 	display: flex;
 	align-items: center;
 	gap: var(--space-3);
-	/* Installed iOS PWA runs full-bleed under the status bar / notch /
-	   Dynamic Island (black-translucent + viewport-fit=cover). Pad by the
-	   safe-area insets so the controls clear the clock/battery/camera and
-	   stay tappable; the bar's own background fills the inset. */
-	padding: calc(var(--space-3) + env(safe-area-inset-top))
-		calc(var(--space-4) + env(safe-area-inset-right)) var(--space-3)
+	/* Clear the iOS status bar / notch (installed PWA runs full-bleed). */
+	padding: calc(var(--space-4) + env(safe-area-inset-top))
+		calc(var(--space-4) + env(safe-area-inset-right)) var(--space-4)
 		calc(var(--space-4) + env(safe-area-inset-left));
-	background: var(--bg);
-	border-bottom: 1px solid var(--border);
+	background: color-mix(in srgb, var(--bg) 70%, transparent);
+	backdrop-filter: blur(18px) saturate(140%);
+	-webkit-backdrop-filter: blur(18px) saturate(140%);
 }
 .topbar .title {
 	flex: 1;
-	font-weight: 600;
-	font-size: 17px;
+	font-weight: 700;
+	font-size: 20px;
+	letter-spacing: -0.01em;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 .topbar a,
 .topbar button {
-	color: var(--accent);
-	background: none;
+	color: var(--text);
+	background: var(--surface);
 	border: none;
 	font: inherit;
 	cursor: pointer;
-	padding: var(--space-1);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 40px;
+	min-height: 40px;
+	padding: 0 var(--space-3);
+	border-radius: 999px;
+}
+.topbar a:active,
+.topbar button:active {
+	transform: scale(0.94);
 }
 
 .tabbar {
@@ -140,28 +220,41 @@ a {
 	left: 0;
 	right: 0;
 	display: flex;
-	background: var(--bg);
+	gap: var(--space-1);
+	padding: var(--space-2) var(--space-3) calc(var(--space-2) + env(safe-area-inset-bottom));
+	background: color-mix(in srgb, var(--bg) 78%, transparent);
+	backdrop-filter: blur(20px) saturate(140%);
+	-webkit-backdrop-filter: blur(20px) saturate(140%);
 	border-top: 1px solid var(--border);
 }
 .tabbar a {
 	flex: 1;
 	text-align: center;
-	padding: var(--space-3) 0 calc(var(--space-3) + env(safe-area-inset-bottom));
+	padding: var(--space-3) 0;
+	margin: 0 2px;
 	color: var(--text-muted);
 	text-decoration: none;
-	font-size: 13px;
+	font-size: 12px;
+	font-weight: 600;
+	border-radius: 14px;
+	transition:
+		color 0.15s,
+		background 0.15s;
 }
 .tabbar a[aria-current='page'] {
 	color: var(--accent);
-	font-weight: 600;
+	background: color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 .card {
 	background: var(--surface);
 	border: 1px solid var(--border);
-	border-radius: 12px;
-	padding: var(--space-4);
-	margin-bottom: var(--space-3);
+	border-radius: var(--radius);
+	padding: var(--space-6);
+	margin-bottom: var(--space-4);
+	box-shadow: var(--shadow);
+	backdrop-filter: blur(14px);
+	-webkit-backdrop-filter: blur(14px);
 }
 
 .row {
@@ -169,17 +262,23 @@ a {
 	align-items: center;
 	gap: var(--space-3);
 	width: 100%;
-	padding: var(--space-3) var(--space-2);
-	border-bottom: 1px solid var(--border);
-	background: none;
-	border-left: none;
-	border-right: none;
-	border-top: none;
+	padding: var(--space-4);
+	margin-bottom: var(--space-2);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: var(--surface);
 	color: inherit;
 	font: inherit;
 	text-align: left;
 	text-decoration: none;
 	cursor: pointer;
+	transition:
+		transform 0.12s,
+		background 0.15s;
+}
+.row:active {
+	transform: scale(0.985);
+	background: var(--surface-strong);
 }
 .row .grow {
 	flex: 1;
@@ -202,11 +301,11 @@ a {
 }
 
 .section-head {
-	color: var(--text-muted);
-	font-size: 13px;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
-	margin: var(--space-6) 0 var(--space-2);
+	color: var(--text);
+	font-size: 1rem;
+	font-weight: 700;
+	letter-spacing: -0.01em;
+	margin: var(--space-8) 0 var(--space-3);
 }
 
 label.field {
@@ -217,7 +316,8 @@ label.field > span {
 	display: block;
 	color: var(--text-muted);
 	font-size: 13px;
-	margin-bottom: var(--space-1);
+	font-weight: 600;
+	margin-bottom: var(--space-2);
 }
 input,
 select,
@@ -227,8 +327,16 @@ textarea {
 	color: var(--text);
 	background: var(--surface);
 	border: 1px solid var(--border);
-	border-radius: 8px;
-	padding: var(--space-3);
+	border-radius: var(--radius-sm);
+	padding: var(--space-3) var(--space-4);
+	min-height: 48px;
+}
+input:focus,
+select:focus,
+textarea:focus {
+	outline: none;
+	border-color: transparent;
+	box-shadow: 0 0 0 2px var(--ring);
 }
 
 .btn {
@@ -236,29 +344,46 @@ textarea {
 	align-items: center;
 	justify-content: center;
 	gap: var(--space-2);
-	min-height: 44px;
-	padding: 0 var(--space-4);
-	border-radius: 10px;
+	min-height: 50px;
+	padding: 0 var(--space-6);
+	border-radius: 999px;
 	border: 1px solid var(--border);
-	background: var(--surface);
+	background: var(--surface-strong);
 	color: var(--text);
 	font: inherit;
+	font-weight: 600;
 	cursor: pointer;
 	text-decoration: none;
+	transition:
+		transform 0.12s,
+		filter 0.15s;
+}
+.btn:active {
+	transform: scale(0.97);
 }
 .btn-primary {
-	background: var(--accent);
-	border-color: var(--accent);
-	color: #fff;
-	font-weight: 600;
+	background: linear-gradient(
+		135deg,
+		var(--accent) 0%,
+		color-mix(in srgb, var(--accent) 70%, var(--accent-2)) 100%
+	);
+	border-color: transparent;
+	color: var(--accent-ink);
+	box-shadow: var(--shadow-glow);
+}
+.btn-primary:hover {
+	filter: brightness(1.05);
 }
 .btn-danger {
 	color: var(--negative);
-	border-color: var(--negative);
+	border-color: color-mix(in srgb, var(--negative) 45%, transparent);
+	background: color-mix(in srgb, var(--negative) 12%, transparent);
 }
 .btn:disabled {
-	opacity: 0.5;
+	opacity: 0.45;
 	cursor: not-allowed;
+	box-shadow: none;
+	filter: none;
 }
 .btn-block {
 	display: flex;
@@ -277,29 +402,45 @@ textarea {
 	background: var(--surface);
 	color: var(--text);
 	border-radius: 999px;
-	padding: var(--space-1) var(--space-3);
+	padding: var(--space-2) var(--space-4);
 	font-size: 14px;
+	font-weight: 600;
 	cursor: pointer;
+	transition:
+		transform 0.12s,
+		background 0.15s;
+}
+.chip:active {
+	transform: scale(0.95);
 }
 .chip[aria-pressed='true'] {
-	background: var(--accent);
-	border-color: var(--accent);
-	color: #fff;
+	background: color-mix(in srgb, var(--accent) 22%, transparent);
+	border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+	color: var(--accent);
 }
 
 .fab {
 	position: fixed;
-	right: var(--space-4);
-	bottom: calc(72px + env(safe-area-inset-bottom));
-	width: 56px;
-	height: 56px;
+	right: calc(var(--space-4) + env(safe-area-inset-right));
+	bottom: calc(84px + env(safe-area-inset-bottom));
+	width: 60px;
+	height: 60px;
 	border-radius: 50%;
-	background: var(--accent);
-	color: #fff;
+	background: linear-gradient(
+		135deg,
+		var(--accent) 0%,
+		color-mix(in srgb, var(--accent) 65%, var(--accent-2)) 100%
+	);
+	color: var(--accent-ink);
 	border: none;
-	font-size: 28px;
+	font-size: 30px;
+	line-height: 1;
 	cursor: pointer;
-	box-shadow: 0 4px 12px rgb(0 0 0 / 0.25);
+	box-shadow: var(--shadow-glow);
+	transition: transform 0.12s;
+}
+.fab:active {
+	transform: scale(0.92);
 }
 
 .banner {
@@ -307,8 +448,10 @@ textarea {
 	align-items: center;
 	gap: var(--space-3);
 	padding: var(--space-3) var(--space-4);
-	background: color-mix(in srgb, var(--warning) 16%, var(--bg));
-	border-bottom: 1px solid var(--border);
+	margin-bottom: var(--space-4);
+	background: color-mix(in srgb, var(--warning) 18%, transparent);
+	border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
+	border-radius: var(--radius-sm);
 	font-size: 14px;
 }
 
@@ -324,7 +467,7 @@ textarea {
 .dl {
 	display: grid;
 	grid-template-columns: auto 1fr;
-	gap: var(--space-1) var(--space-4);
+	gap: var(--space-2) var(--space-4);
 	font-variant-numeric: tabular-nums;
 }
 .dl dt {
@@ -333,4 +476,81 @@ textarea {
 .dl dd {
 	margin: 0;
 	text-align: right;
+}
+
+code {
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 0.9em;
+	background: var(--surface-strong);
+	padding: 2px 6px;
+	border-radius: 6px;
+}
+
+/* Circular leading glyph for list rows (initial or icon). */
+.glyph {
+	flex: none;
+	width: 44px;
+	height: 44px;
+	border-radius: 50%;
+	display: grid;
+	place-items: center;
+	font-size: 18px;
+	font-weight: 700;
+	line-height: 1;
+	color: var(--text);
+	background: linear-gradient(
+		135deg,
+		color-mix(in srgb, var(--accent-2) 38%, transparent),
+		color-mix(in srgb, var(--accent) 24%, transparent)
+	);
+}
+
+/* Prominent balance summary (top of the Balances screen). */
+.summary-card {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-1);
+	padding: var(--space-8) var(--space-6);
+	margin-bottom: var(--space-6);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	box-shadow: var(--shadow);
+	background:
+		radial-gradient(120% 120% at 100% 0%, color-mix(in srgb, var(--accent-2) 30%, transparent), transparent 60%),
+		var(--surface-strong);
+	backdrop-filter: blur(14px);
+	-webkit-backdrop-filter: blur(14px);
+}
+.summary-label {
+	color: var(--text-muted);
+	font-weight: 600;
+	font-size: 0.95rem;
+}
+.summary-amount {
+	font-size: 2.5rem;
+	font-weight: 800;
+	letter-spacing: -0.02em;
+	font-variant-numeric: tabular-nums;
+	margin-top: var(--space-1);
+}
+.summary-split {
+	display: flex;
+	gap: var(--space-8);
+	margin-top: var(--space-4);
+	padding-top: var(--space-4);
+	border-top: 1px solid var(--border);
+}
+.summary-split > div {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.summary-split span {
+	color: var(--text-muted);
+	font-size: 0.8rem;
+	font-weight: 600;
+}
+.summary-split strong {
+	font-size: 1.1rem;
+	font-variant-numeric: tabular-nums;
 }
