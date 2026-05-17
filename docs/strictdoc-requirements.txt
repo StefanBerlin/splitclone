@@ -1,0 +1,3 @@
+# Pinned so CI builds the SRS with the exact StrictDoc the docs were
+# authored/verified against locally (.venv has 0.21.0). Bump deliberately.
+strictdoc==0.21.0
