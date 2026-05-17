@@ -18,6 +18,13 @@ from your browser.
 - 🧾 **The usual essentials.** Expenses, flexible splits, settlements, running
   balances, labels/filters, and a CSV export.
 
+## Live site
+
+- **App:** <https://stefanberlin.github.io/splitclone/>
+- **Specification (SRS):** <https://stefanberlin.github.io/splitclone/srs/> —
+  the full requirements document (StrictDoc), published from
+  [`docs/requirements.sdoc`](docs/requirements.sdoc) on every deploy.
+
 ---
 
 ## What you can do

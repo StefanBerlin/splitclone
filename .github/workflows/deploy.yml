@@ -1,15 +1,19 @@
 name: Deploy to GitHub Pages
 
-# SplitClone is a client-only static SPA (SC-ARC-HST-1). This builds the
-# adapter-static output and publishes it to a GitHub Pages *project* site
-# at https://stefanberlin.github.io/splitclone/ (see project memory:
-# deploy target — paths.base = '/splitclone' is set in svelte.config.js).
+# SplitClone is a client-only static SPA (SC-ARC-HST-1). This publishes the
+# adapter-static build (app) plus the StrictDoc SRS to a GitHub Pages
+# *project* site:
+#   app  https://stefanberlin.github.io/splitclone/
+#   SRS  https://stefanberlin.github.io/splitclone/srs/
+# (paths.base = '/splitclone' is set in svelte.config.js — see project
+# memory: deploy target.)
 #
-# The gate (format/lint/typecheck/unit/build) is the SAME reusable workflow
-# PRs run via ci.yml — see gate.yml. Deploy only runs if `gate` passes, so a
-# tree that would fail post-merge never reaches Pages. (The `build` job below
-# re-runs the build because it also needs the artifact to publish; the extra
-# ~1 min on main is the price of a guaranteed-good publish.)
+# There is no build job here. The reusable gate (gate.yml — the SAME bar
+# every PR clears via ci.yml) does the build itself and, because we pass
+# publish: true, also assembles and uploads the Pages artifact in that one
+# run. So a single checkout/install/build serves both "is it good?" and
+# "ship it" — no duplicated compute — and deploy still only runs if the
+# gate is green.
 
 on:
   push:
@@ -30,89 +34,14 @@ concurrency:
 
 jobs:
   # Identical bar to every PR — ci.yml calls this same reusable workflow.
+  # publish:true makes this run also upload the Pages artifact to deploy.
   gate:
     uses: ./.github/workflows/gate.yml
-
-  build:
-    needs: gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      # Node BEFORE pnpm: pnpm 11's installer needs Node >=22.13, so it
-      # cannot run on the runner's default Node. pnpm itself is provisioned
-      # by Corepack from the pinned "packageManager" field in package.json
-      # (same mechanism used locally) — no pnpm/action-setup.
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - name: Enable Corepack (pnpm pinned in package.json)
-        run: |
-          corepack enable
-          corepack prepare pnpm@11.1.2 --activate
-
-      - name: Resolve pnpm store path
-        id: pnpm-store
-        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.pnpm-store.outputs.path }}
-          key: pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: pnpm-store-
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build
-        env:
-          # PKCE SPA client id — not a secret. Set as a repo Variable:
-          # Settings > Secrets and variables > Actions > Variables.
-          # If unset, the build still succeeds (auth/config.ts tolerates a
-          # missing id) but OneDrive sign-in will not work on the live site.
-          PUBLIC_MS_CLIENT_ID: ${{ vars.PUBLIC_MS_CLIENT_ID }}
-        run: pnpm build
-
-      # GitHub Pages serves 404.html for any path it can't resolve to a
-      # file. Publishing the SPA shell under that name makes client-side
-      # deep links / hard refreshes (e.g. /splitclone/ledger/<id>) boot the
-      # app instead of hitting Pages' generic 404. Root still serves
-      # index.html (HTTP 200); only unknown paths use 404.html.
-      - name: SPA fallback for GitHub Pages deep links
-        run: cp build/index.html build/404.html
-
-      # Publish the StrictDoc SRS alongside the app at /splitclone/srs/.
-      # gate.yml already proved this builds (it ran before this job), so
-      # this re-run only fails if the runner env differs — never a surprise
-      # after merge. Real files under build/ are served by Pages directly,
-      # ahead of the SPA 404 fallback, and there is no /srs app route, so
-      # there is no collision.
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install StrictDoc (pinned)
-        run: pip install -r docs/strictdoc-requirements.txt
-
-      - name: Build SRS
-        run: pnpm docs:srs
-
-      - name: Stage SRS into the Pages tree
-        run: |
-          mkdir -p build/srs
-          cp -r docs/_build/html/. build/srs/
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: build
+    with:
+      publish: true
 
   deploy:
-    needs: build
+    needs: gate
     runs-on: ubuntu-latest
     environment:
       name: github-pages

@@ -1,14 +1,27 @@
 name: Gate
 
 # Single source of truth for "is this tree deployable?": format, lint,
-# typecheck, unit tests, and a production build. Called (never run directly)
-# by both ci.yml (on every PR, before merge) and deploy.yml (on main, before
-# publishing). Keeping it in ONE reusable workflow means the bar a PR must
-# clear is exactly the bar main is held to — they can never drift, so a green
-# PR cannot produce a red post-merge deploy.
+# typecheck, unit tests, a production build, and the StrictDoc SRS build.
+# Called (never run directly) by both ci.yml (every PR, before merge) and
+# deploy.yml (on main). One reusable workflow means the bar a PR clears is
+# exactly the bar main is held to — they cannot drift, so a green PR cannot
+# produce a red post-merge deploy.
+#
+# When called with `publish: true` (deploy.yml only) this same job ALSO
+# assembles and uploads the Pages artifact, so deploy.yml needs no second
+# checkout/install/build job — the deploy is published straight from this
+# run. PRs call it without `publish`, so they pay nothing for that.
 
 on:
   workflow_call:
+    inputs:
+      publish:
+        description: >-
+          Also stage the SPA 404 fallback + SRS and upload the Pages
+          artifact for a downstream deploy job. deploy.yml passes true;
+          PRs leave it false.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -59,7 +72,7 @@ jobs:
       - name: Unit tests
         run: pnpm test:unit -- --run
 
-      # Build here too: a tree that lints/typechecks can still fail the
+      # Build here: a tree that lints/typechecks can still fail the
       # adapter-static build. This is the step that makes "deploy never
       # fails after merge" actually true.
       - name: Build
@@ -71,9 +84,9 @@ jobs:
           PUBLIC_MS_CLIENT_ID: ${{ vars.PUBLIC_MS_CLIENT_ID }}
         run: pnpm build
 
-      # The SRS (StrictDoc) is published to Pages by deploy.yml. Build it
-      # here too so a malformed requirements.sdoc fails the PR, not the
-      # post-merge deploy — same "gate == deploy bar" guarantee as above.
+      # SRS (StrictDoc) is published alongside the app. Building it on every
+      # PR means a malformed requirements.sdoc fails the PR, not the
+      # post-merge deploy.
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -84,3 +97,28 @@ jobs:
 
       - name: Build SRS (validates requirements.sdoc)
         run: pnpm docs:srs
+
+      # --- Publish-only: assemble + upload the Pages artifact. -----------
+      # Skipped on PRs (publish=false), so PRs do zero artifact work.
+
+      # GitHub Pages serves 404.html for any path it can't resolve to a
+      # file; publishing the SPA shell there boots the app on deep links /
+      # hard refreshes instead of Pages' generic 404. Root still serves
+      # index.html (HTTP 200); only unknown paths use 404.html.
+      - name: SPA fallback for GitHub Pages deep links
+        if: ${{ inputs.publish }}
+        run: cp build/index.html build/404.html
+
+      # Real files under build/ are served by Pages directly, ahead of the
+      # SPA 404 fallback, and there is no /srs app route — no collision.
+      - name: Stage SRS into the Pages tree (/splitclone/srs/)
+        if: ${{ inputs.publish }}
+        run: |
+          mkdir -p build/srs
+          cp -r docs/_build/html/. build/srs/
+
+      - name: Upload Pages artifact
+        if: ${{ inputs.publish }}
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build
