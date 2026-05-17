@@ -100,11 +100,13 @@
 	{:else}
 		<p>
 			{#if app.syncState === 'syncing'}
-				⏳ Syncing…
+				⟳ Syncing…
+			{:else if app.syncState === 'offline'}
+				⌧ Offline — changes will sync automatically when you’re back online.
 			{:else if app.syncState === 'error'}
 				⚠ Sync error: <span class="muted">{app.syncError}</span>
 			{:else}
-				☁ Connected.
+				☁ In sync. Changes sync automatically.
 			{/if}
 		</p>
 		<button

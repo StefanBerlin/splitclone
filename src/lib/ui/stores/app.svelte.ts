@@ -10,8 +10,15 @@
  * surface (SC-ARC-ENC-4, -6) is exposed here for the create/join screens.
  * Phase 6 adds the OneDrive provider behind the same façade.
  */
-import { fold, makeEvent } from '$lib/domain';
-import type { DerivedState, EventKind, EventPayloads, LedgerEvent, UUID } from '$lib/domain';
+import { deviceClaim, fold, makeEvent, unclaimedParticipants } from '$lib/domain';
+import type {
+	DerivedState,
+	EventKind,
+	EventPayloads,
+	LedgerEvent,
+	Participant,
+	UUID
+} from '$lib/domain';
 import { getDeviceId } from '$lib/platform/device-id';
 import { keyGet, keyPut, metaGet, metaSet } from '$lib/storage/indexed-db';
 import { dataKeyFingerprint, generateDataKey, importDataKey } from '$lib/storage/encryption';
@@ -24,7 +31,12 @@ import { listSharedFolders } from '$lib/storage/providers/shared';
 import { checkRemoteLedger, syncLedger } from '$lib/sync/engine';
 import { DEMO_LEDGER_ID, seedEvents } from './seed';
 
-export type SyncState = 'idle' | 'syncing' | 'error';
+/** SC-FR-SYN-3: idle = in sync, plus syncing / offline / error. */
+export type SyncState = 'idle' | 'syncing' | 'offline' | 'error';
+
+/** SC-FR-SYN-1: a commit must reach the shared folder within 10 s. We coalesce
+ *  a burst of commits behind one timer well inside that budget. */
+const AUTO_SYNC_DEBOUNCE_MS = 3000;
 
 export interface LedgerSummary {
 	id: UUID;
@@ -61,6 +73,12 @@ class AppStore {
 	private _connected = $state(false);
 	private _syncState = $state<SyncState>('idle');
 	private _syncError = $state('');
+	/** Auto-sync scheduling (SC-FR-SYN-1). One coalescing timer per ledger; a
+	 *  per-ledger in-flight guard so a debounced run and a focus/manual run
+	 *  never overlap on the same folder. */
+	private autoTimers: Record<UUID, ReturnType<typeof setTimeout>> = {};
+	private syncing = new Set<UUID>();
+	private listenersInstalled = false;
 
 	constructor() {
 		void this.init();
@@ -124,7 +142,12 @@ class AppStore {
 				})
 			);
 			this.logs = loaded;
-			if (this.oneDriveConfigured) this._connected = await isConnected();
+			if (this.oneDriveConfigured) {
+				this._connected = await isConnected();
+				this.installSyncListeners();
+				// SC-FR-SYN-1: pull on open.
+				if (this._connected) void this.syncAllConnected();
+			}
 		} catch (err) {
 			console.error('[app] init failed; running with empty in-memory state', err);
 		} finally {
@@ -209,11 +232,45 @@ class AppStore {
 
 	/** The participant this device has claimed in a given ledger, if any. */
 	claimedParticipantId(ledgerId: UUID): UUID | undefined {
+		return deviceClaim(this.derived(ledgerId), this._deviceId)?.id;
+	}
+
+	// ---- Multi-device participant claim (SC-FR-PRT-2) ---------------------
+
+	/** A ledger this device holds but has not yet bound a participant to.
+	 *  True for a freshly-joined ledger (the owner's participants exist but
+	 *  none is ours); false for empty/just-created ledgers, which auto-claim. */
+	needsClaim(ledgerId: UUID): boolean {
+		if (!this.hasLedger(ledgerId)) return false;
 		const s = this.derived(ledgerId);
-		for (const p of s.participants.values()) {
-			if (p.claimedByDeviceId === this._deviceId) return p.id;
-		}
-		return undefined;
+		if (s.participants.size === 0) return false;
+		return !deviceClaim(s, this._deviceId);
+	}
+
+	/** Existing participants no device owns — claim candidates (SC-FR-PRT-2a,
+	 *  includes deviceless placeholders per SC-FR-PRT-4). */
+	unclaimedParticipantList(ledgerId: UUID): Participant[] {
+		return unclaimedParticipants(this.derived(ledgerId));
+	}
+
+	/** SC-FR-PRT-2a: bind this device to an existing participant entry. */
+	claimParticipant(ledgerId: UUID, participantId: UUID): void {
+		if (this.claimedParticipantId(ledgerId)) return;
+		this.dispatch(ledgerId, 'ParticipantClaimed', {
+			participantId,
+			deviceId: this._deviceId
+		});
+	}
+
+	/** SC-FR-PRT-2b: create a new participant and claim it in one step. */
+	addAndClaimParticipant(ledgerId: UUID, name: string): void {
+		if (this.claimedParticipantId(ledgerId)) return;
+		const participantId = `p-${crypto.randomUUID().slice(0, 8)}`;
+		this.dispatch(ledgerId, 'ParticipantAdded', { participantId, name });
+		this.dispatch(ledgerId, 'ParticipantClaimed', {
+			participantId,
+			deviceId: this._deviceId
+		});
 	}
 
 	dispatch<K extends EventKind>(ledgerId: UUID, kind: K, payload: EventPayloads[K]): void {
@@ -227,8 +284,10 @@ class AppStore {
 		});
 		// Optimistic in-memory update (replace array so $state notices)…
 		this.logs[ledgerId] = [...(this.logs[ledgerId] ?? []), event];
-		// …then persist asynchronously, serialised per ledger.
+		// …then persist asynchronously, serialised per ledger…
 		this.persist(ledgerId, event);
+		// …and schedule a push to OneDrive within the SC-FR-SYN-1 budget.
+		this.scheduleAutoSync(ledgerId);
 	}
 
 	/** Local-only forget: drops the in-memory log and the IDB segments.
@@ -300,6 +359,10 @@ class AppStore {
 	/** Called by /auth/callback once tokens have been adopted. */
 	async refreshConnection(): Promise<void> {
 		this._connected = await isConnected();
+		if (this._connected) {
+			this.installSyncListeners();
+			void this.syncAllConnected();
+		}
 	}
 
 	async signOut(): Promise<void> {
@@ -318,20 +381,33 @@ class AppStore {
 		this.logs[id] = await loadLedgerEvents(id, key);
 	}
 
-	/** Manual sync (SC-FR-SYN-2): pull others' segments, push ours, re-fold. */
+	/** Manual sync (SC-FR-SYN-2): force an immediate pull+push for one ledger. */
 	async syncNow(ledgerId: UUID): Promise<void> {
 		if (!this._connected) {
 			this._syncError = 'Not connected to OneDrive.';
 			this._syncState = 'error';
 			return;
 		}
+		this.cancelAutoTimer(ledgerId);
+		await this.runSync(ledgerId);
+	}
+
+	/** Shared pull→push→refold core. Serialised per ledger via `syncing` so a
+	 *  debounced run, a focus run and a manual run can't collide on one folder.
+	 *  `offline` is reported, not treated as a hard error (SC-FR-SYN-3). */
+	private async runSync(ledgerId: UUID): Promise<void> {
+		if (!this._connected || this.syncing.has(ledgerId)) return;
 		const fp = this.keyMeta[ledgerId]?.fingerprint;
 		if (!fp) return;
+		if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+			this._syncState = 'offline';
+			return; // a queued change stays pending; the 'online' listener retries
+		}
+		this.syncing.add(ledgerId);
 		this._syncState = 'syncing';
 		this._syncError = '';
 		try {
-			// Make sure our optimistic in-memory writes are flushed to IDB
-			// segments before we upload them.
+			// Flush optimistic in-memory writes to sealed IDB segments first.
 			await (this.writeChain[ledgerId] ?? Promise.resolve());
 			await syncLedger(this.providerFor(ledgerId), ledgerId, this._deviceId, fp);
 			await this.reloadLedger(ledgerId);
@@ -340,7 +416,55 @@ class AppStore {
 			this._syncState = 'error';
 			this._syncError = err instanceof Error ? err.message : String(err);
 			console.error('[app] sync failed', err);
+		} finally {
+			this.syncing.delete(ledgerId);
 		}
+	}
+
+	// ---- Background / automatic sync (SC-FR-SYN-1) ------------------------
+
+	private cancelAutoTimer(ledgerId: UUID): void {
+		const t = this.autoTimers[ledgerId];
+		if (t !== undefined) {
+			clearTimeout(t);
+			delete this.autoTimers[ledgerId];
+		}
+	}
+
+	/** Coalesce a burst of commits behind one timer (non-resetting, so it can't
+	 *  be starved past the SC-FR-SYN-1 10 s budget) and then push. */
+	private scheduleAutoSync(ledgerId: UUID): void {
+		if (!this.oneDriveConfigured || !this._connected) return;
+		if (!this.keyMeta[ledgerId]?.fingerprint) return;
+		if (this.autoTimers[ledgerId] !== undefined) return; // already pending
+		this.autoTimers[ledgerId] = setTimeout(() => {
+			delete this.autoTimers[ledgerId];
+			void this.runSync(ledgerId);
+		}, AUTO_SYNC_DEBOUNCE_MS);
+	}
+
+	/** SC-FR-SYN-1: pull (+push) every connected ledger. Triggered on open and
+	 *  whenever the app returns to the foreground / regains connectivity. */
+	async syncAllConnected(): Promise<void> {
+		if (!this._connected) return;
+		for (const id of Object.keys(this.logs)) {
+			if (this.keyMeta[id]?.fingerprint) await this.runSync(id);
+		}
+	}
+
+	/** Window/visibility/connectivity wiring. Installed once, browser-only. */
+	private installSyncListeners(): void {
+		if (this.listenersInstalled || typeof window === 'undefined') return;
+		this.listenersInstalled = true;
+		const foreground = () => {
+			if (document.visibilityState !== 'hidden') void this.syncAllConnected();
+		};
+		window.addEventListener('focus', foreground);
+		document.addEventListener('visibilitychange', foreground);
+		window.addEventListener('online', () => void this.syncAllConnected());
+		window.addEventListener('offline', () => {
+			if (this._syncState !== 'syncing') this._syncState = 'offline';
+		});
 	}
 
 	/**

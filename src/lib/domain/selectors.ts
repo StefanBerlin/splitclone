@@ -1,5 +1,24 @@
 /** Read-side helpers over DerivedState. Pure. */
-import type { DerivedState, Expense, UUID } from './types';
+import type { DerivedState, Expense, Participant, UUID } from './types';
+
+/** The participant a given device has claimed in this ledger, if any
+ *  (SC-FR-PRT-2 — a device is bound to exactly one participant). */
+export function deviceClaim(state: DerivedState, deviceId: UUID): Participant | undefined {
+	for (const p of state.participants.values()) {
+		if (p.claimedByDeviceId === deviceId) return p;
+	}
+	return undefined;
+}
+
+/** Participants no device has claimed yet — the candidates a freshly-joined
+ *  device may adopt instead of creating a new entry (SC-FR-PRT-2 (a)). This
+ *  intentionally includes deviceless placeholder participants (SC-FR-PRT-4):
+ *  claiming one is exactly how a real person attaches to a pre-made entry. */
+export function unclaimedParticipants(state: DerivedState): Participant[] {
+	return [...state.participants.values()]
+		.filter((p) => !p.claimedByDeviceId)
+		.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
 
 /** Participant display name, falling back to the raw id if unknown. */
 export function participantName(state: DerivedState, id: UUID): string {

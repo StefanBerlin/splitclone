@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { app } from '$lib/ui/stores/app.svelte';
 	import RecoveryCode from '$lib/ui/components/RecoveryCode.svelte';
+	import ClaimParticipant from '$lib/ui/components/ClaimParticipant.svelte';
 
 	let { children } = $props();
 
@@ -9,6 +10,20 @@
 	const exists = $derived(app.hasLedger(ledgerId));
 	const ledger = $derived(exists ? app.derived(ledgerId) : undefined);
 	const path = $derived(page.url.pathname);
+	const needsClaim = $derived(exists && app.needsClaim(ledgerId));
+
+	// SC-FR-SYN-3: one glyph + label per sync state.
+	const sync = $derived(
+		!app.oneDriveConfigured || !app.connected
+			? { icon: '○', label: 'Local only — not synced' }
+			: app.syncState === 'syncing'
+				? { icon: '⟳', label: 'Syncing…' }
+				: app.syncState === 'offline'
+					? { icon: '⌧', label: 'Offline — changes will sync later' }
+					: app.syncState === 'error'
+						? { icon: '⚠', label: `Sync error: ${app.syncError}` }
+						: { icon: '☁', label: 'In sync' }
+	);
 
 	const code = $derived(app.joinCodeFor(ledgerId));
 	const needsRecoveryNag = $derived(exists && !app.recoveryAcknowledged(ledgerId) && !!code);
@@ -38,53 +53,57 @@
 	<div class="topbar">
 		<a href="/" aria-label="Back to ledgers">‹</a>
 		<span class="title">{ledger?.ledgerName}</span>
-		<a href="{base}/settings" title="Sync: in sync">☁</a>
+		<a href="{base}/settings" title={sync.label} aria-label={sync.label}>{sync.icon}</a>
 		<a href="{base}/settings" aria-label="Settings">⋮</a>
 	</div>
 
-	{#if needsRecoveryNag}
-		<div class="recovery-banner">
-			<span>⚠ Save your recovery code for “{ledger?.ledgerName}”</span>
-			<button class="link" onclick={() => (showRecovery = true)}>Show code</button>
-		</div>
-	{/if}
+	{#if needsClaim}
+		<ClaimParticipant {ledgerId} ledgerName={ledger?.ledgerName ?? 'this ledger'} />
+	{:else}
+		{#if needsRecoveryNag}
+			<div class="recovery-banner">
+				<span>⚠ Save your recovery code for “{ledger?.ledgerName}”</span>
+				<button class="link" onclick={() => (showRecovery = true)}>Show code</button>
+			</div>
+		{/if}
 
-	{#if showRecovery && code}
-		<div
-			class="overlay"
-			role="button"
-			tabindex="0"
-			onclick={() => (showRecovery = false)}
-			onkeydown={(e) => e.key === 'Escape' && (showRecovery = false)}
-		>
+		{#if showRecovery && code}
 			<div
-				class="sheet"
-				role="dialog"
-				aria-modal="true"
-				tabindex="-1"
-				onclick={(e) => e.stopPropagation()}
-				onkeydown={() => {}}
+				class="overlay"
+				role="button"
+				tabindex="0"
+				onclick={() => (showRecovery = false)}
+				onkeydown={(e) => e.key === 'Escape' && (showRecovery = false)}
 			>
-				<h2>Recovery code</h2>
-				<RecoveryCode {code} ledgerName={ledger?.ledgerName ?? 'ledger'} />
-				<div class="sheet-actions">
-					<button class="btn" onclick={() => (showRecovery = false)}>Close</button>
-					{#if !app.recoveryAcknowledged(ledgerId)}
-						<button class="btn btn-primary" onclick={acknowledge}>I’ve saved it</button>
-					{/if}
+				<div
+					class="sheet"
+					role="dialog"
+					aria-modal="true"
+					tabindex="-1"
+					onclick={(e) => e.stopPropagation()}
+					onkeydown={() => {}}
+				>
+					<h2>Recovery code</h2>
+					<RecoveryCode {code} ledgerName={ledger?.ledgerName ?? 'ledger'} />
+					<div class="sheet-actions">
+						<button class="btn" onclick={() => (showRecovery = false)}>Close</button>
+						{#if !app.recoveryAcknowledged(ledgerId)}
+							<button class="btn btn-primary" onclick={acknowledge}>I’ve saved it</button>
+						{/if}
+					</div>
 				</div>
 			</div>
-		</div>
+		{/if}
+
+		{@render children()}
+
+		<nav class="tabbar">
+			<a href={base} aria-current={tabCurrent('')}>Expenses</a>
+			<a href="{base}/balances" aria-current={tabCurrent('balances')}>Balances</a>
+			<a href="{base}/labels" aria-current={tabCurrent('labels')}>Labels</a>
+			<a href="{base}/export" aria-current={tabCurrent('export')}>Export</a>
+		</nav>
 	{/if}
-
-	{@render children()}
-
-	<nav class="tabbar">
-		<a href={base} aria-current={tabCurrent('')}>Expenses</a>
-		<a href="{base}/balances" aria-current={tabCurrent('balances')}>Balances</a>
-		<a href="{base}/labels" aria-current={tabCurrent('labels')}>Labels</a>
-		<a href="{base}/export" aria-current={tabCurrent('export')}>Export</a>
-	</nav>
 {/if}
 
 <style>

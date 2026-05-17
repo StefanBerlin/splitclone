@@ -58,9 +58,12 @@ Settings → Sync.
 
 ## 3. Sharing a ledger with other people
 
-1. The creator connects OneDrive and runs **Sync now** once — this creates
-   `OneDrive/Apps/SplitClone/<ledgerId>/` with a plaintext `ledger.json`
-   and the encrypted event segments.
+1. The creator connects OneDrive. The first change (or **Sync now**)
+   creates `OneDrive/Apps/SplitClone/<ledgerId>/` with a plaintext
+   `ledger.json` and the encrypted event segments. From Phase 7 on, sync is
+   automatic: changes push within ~3 s (≤10 s budget, SC-FR-SYN-1) and a
+   pull runs whenever the app is opened or refocused. **Sync now** still
+   exists for an immediate forced cycle.
 2. In OneDrive (web or app), the creator **shares that ledger folder** with
    the other people's Microsoft accounts (edit permission).
 3. Each other person: connect OneDrive in SplitClone, go to **Join a
@@ -69,6 +72,10 @@ Settings → Sync.
    metadata key-fingerprint matches the code (SC-ARC-ENC-3). No folder
    picker, no ledger id to copy — and, as above, **no app registration**:
    they only sign in with their own Microsoft account.
+4. The joiner is then asked **“who are you in this ledger?”** — they pick an
+   existing name the creator already added, or add themselves. This binds
+   their device to one participant (SC-FR-PRT-2); it’s a one-time prompt per
+   device per ledger.
 
 ## Security notes
 
@@ -82,8 +89,6 @@ Settings → Sync.
 
 ## Not yet (later phases)
 
-- Automatic/background sync on focus + 10 s debounce (Phase 7; Phase 6 is
-  manual **Sync now**).
 - Camera QR scanning for the join code (paste works today).
 - Internal-link `resolve()` base-path hardening — paired with the
   deploy/PWA phase, not OneDrive.
