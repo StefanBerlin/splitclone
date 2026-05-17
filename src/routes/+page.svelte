@@ -40,8 +40,4 @@
 
 	<a class="btn btn-primary btn-block" href={resolve('/ledger/new')}>+ Create a new ledger</a>
 	<a class="btn btn-block" href={resolve('/ledger/join')}>Join with a code</a>
-
-	<p class="muted" style="margin-top: var(--space-8); font-size: 13px">
-		Phase 3 — UI shell on in-memory demo data. No persistence, network or encryption yet.
-	</p>
 </div>

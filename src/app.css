@@ -93,6 +93,9 @@ a {
 	max-width: 40rem;
 	margin: 0 auto;
 	padding: var(--space-4);
+	/* Keep body content out from under the notch in landscape. */
+	padding-left: calc(var(--space-4) + env(safe-area-inset-left));
+	padding-right: calc(var(--space-4) + env(safe-area-inset-right));
 	padding-bottom: 88px; /* clear the tab bar */
 }
 
@@ -103,7 +106,13 @@ a {
 	display: flex;
 	align-items: center;
 	gap: var(--space-3);
-	padding: var(--space-3) var(--space-4);
+	/* Installed iOS PWA runs full-bleed under the status bar / notch /
+	   Dynamic Island (black-translucent + viewport-fit=cover). Pad by the
+	   safe-area insets so the controls clear the clock/battery/camera and
+	   stay tappable; the bar's own background fills the inset. */
+	padding: calc(var(--space-3) + env(safe-area-inset-top))
+		calc(var(--space-4) + env(safe-area-inset-right)) var(--space-3)
+		calc(var(--space-4) + env(safe-area-inset-left));
 	background: var(--bg);
 	border-bottom: 1px solid var(--border);
 }

@@ -61,8 +61,9 @@
 
 		<div class="card">
 			🔒 All ledger contents are encrypted at rest with a key generated on this device
-			(AES-256-GCM). The next step shows your recovery code — save it. The OneDrive folder picker
-			arrives in Phase 6; for now the ledger lives only in this browser.
+			(AES-256-GCM). The next step shows your recovery code — save it; it’s the only thing that can
+			unlock this ledger. The ledger works fully offline on this device; connect OneDrive in
+			Settings to sync it across devices and share it with others.
 		</div>
 	</div>
 {:else}
