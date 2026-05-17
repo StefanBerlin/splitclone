@@ -21,6 +21,7 @@
 		"test": "npm run test:unit -- --run && npm run test:e2e",
 		"test:e2e": "playwright install && playwright test",
 		"play": "vite-node scripts/play.ts",
+		"docs:srs": "strictdoc export docs/requirements.sdoc --output-dir docs/_build",
 		"gen:icons": "node scripts/gen-icons.mjs"
 	},
 	"devDependencies": {

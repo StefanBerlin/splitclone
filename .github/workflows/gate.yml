@@ -70,3 +70,17 @@ jobs:
           # missing id); OneDrive sign-in just won't work on the live site.
           PUBLIC_MS_CLIENT_ID: ${{ vars.PUBLIC_MS_CLIENT_ID }}
         run: pnpm build
+
+      # The SRS (StrictDoc) is published to Pages by deploy.yml. Build it
+      # here too so a malformed requirements.sdoc fails the PR, not the
+      # post-merge deploy — same "gate == deploy bar" guarantee as above.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install StrictDoc (pinned)
+        run: pip install -r docs/strictdoc-requirements.txt
+
+      - name: Build SRS (validates requirements.sdoc)
+        run: pnpm docs:srs

@@ -84,6 +84,28 @@ jobs:
       - name: SPA fallback for GitHub Pages deep links
         run: cp build/index.html build/404.html
 
+      # Publish the StrictDoc SRS alongside the app at /splitclone/srs/.
+      # gate.yml already proved this builds (it ran before this job), so
+      # this re-run only fails if the runner env differs — never a surprise
+      # after merge. Real files under build/ are served by Pages directly,
+      # ahead of the SPA 404 fallback, and there is no /srs app route, so
+      # there is no collision.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install StrictDoc (pinned)
+        run: pip install -r docs/strictdoc-requirements.txt
+
+      - name: Build SRS
+        run: pnpm docs:srs
+
+      - name: Stage SRS into the Pages tree
+        run: |
+          mkdir -p build/srs
+          cp -r docs/_build/html/. build/srs/
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
