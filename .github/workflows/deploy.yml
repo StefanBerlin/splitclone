@@ -28,16 +28,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.1.2
-
+      # Node BEFORE pnpm: pnpm 11's installer needs Node >=22.13, so it
+      # cannot run on the runner's default Node. pnpm itself is provisioned
+      # by Corepack from the pinned "packageManager" field in package.json
+      # (same mechanism used locally) — no pnpm/action-setup.
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: pnpm
+
+      - name: Enable Corepack (pnpm pinned in package.json)
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.1.2 --activate
+
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

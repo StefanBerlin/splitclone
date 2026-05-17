@@ -4,6 +4,10 @@
 	"version": "0.1.0",
 	"description": "Privacy-first shared-expense PWA backed by an encrypted OneDrive folder. No server.",
 	"type": "module",
+	"packageManager": "pnpm@11.1.2",
+	"engines": {
+		"node": ">=22.13"
+	},
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
