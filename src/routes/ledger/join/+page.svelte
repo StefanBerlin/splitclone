@@ -91,9 +91,8 @@
 
 	{#if !app.oneDriveConfigured}
 		<div class="card">
-			OneDrive is not configured in this build, so this screen only validates the code locally. With
-			OneDrive enabled and connected, joining scans folders shared with your account and adopts the
-			one whose metadata fingerprint matches (SC-ARC-ENC-3).
+			Cloud sync is unavailable in this version of the app, so this screen only checks that the code
+			is valid. Joining an existing ledger from OneDrive needs the cloud-enabled app.
 		</div>
 	{:else if !app.connected}
 		<div class="card">

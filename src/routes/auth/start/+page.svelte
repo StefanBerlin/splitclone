@@ -9,7 +9,7 @@
 	onMount(async () => {
 		const cfg = oauthConfig();
 		if (!cfg) {
-			error = 'OneDrive is not configured in this build (no client id).';
+			error = 'Cloud sync is unavailable in this version of the app.';
 			return;
 		}
 		const { verifier, challenge } = await createPkcePair();

@@ -90,8 +90,8 @@
 	<p class="section-head">Sync</p>
 	{#if !app.oneDriveConfigured}
 		<p class="muted" style="font-size:13px">
-			OneDrive is not configured in this build. The ledger lives only in this browser. See
-			<code>.env.example</code> to enable cloud sync.
+			Cloud sync is unavailable in this version of the app. This ledger stays on this device only —
+			keep your recovery code safe so it can never be lost.
 		</p>
 	{:else if !app.connected}
 		<p class="muted" style="font-size:13px">
@@ -142,7 +142,8 @@
 			</button>
 		{/if}
 		<p class="muted" style="font-size:13px">
-			Anyone joining this ledger uses this code. OneDrive folder sharing arrives in Phase 6.
+			This code is the secret that unlocks (decrypts) the ledger. Share it only with people you want
+			to join, through a trusted channel — never inside the OneDrive folder itself.
 		</p>
 	{:else}
 		<p class="muted" style="font-size:13px">No data key on this device for this ledger.</p>
@@ -177,7 +178,7 @@
 		Forget this ledger on this device
 	</button>
 	<p class="muted" style="font-size:13px">
-		Removes only the local copy. In later phases the OneDrive data is left untouched and can be
-		rejoined with the recovery code.
+		Removes only the local copy on this device. Any synced OneDrive data is left untouched and can
+		be rejoined later with the recovery code.
 	</p>
 </div>
