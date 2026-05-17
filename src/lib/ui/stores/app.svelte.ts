@@ -44,8 +44,17 @@ import { checkRemoteLedger, syncLedger } from '$lib/sync/engine';
 export type SyncState = 'idle' | 'syncing' | 'offline' | 'error';
 
 /** SC-FR-SYN-1: a commit must reach the shared folder within 10 s. We coalesce
- *  a burst of commits behind one timer well inside that budget. */
-const AUTO_SYNC_DEBOUNCE_MS = 3000;
+ *  a burst of commits behind one timer well inside that budget. Kept short so
+ *  a single expense propagates quickly; still long enough to batch the few
+ *  events one user action emits. */
+const AUTO_SYNC_DEBOUNCE_MS = 1500;
+
+/** While the app is in the foreground and connected, pull on this cadence so
+ *  another device's change appears without the user touching anything. A
+ *  consumer file-sync backend offers no push channel, so periodic polling is
+ *  the only way; the interval trades freshness against request volume and
+ *  battery. Polling pauses automatically when hidden/offline. */
+const FOREGROUND_POLL_MS = 15000;
 
 /** Turn an opaque thrown value into something a user can act on. Bare
  *  DOMExceptions (notably WebCrypto's `OperationError`, whose message is the
@@ -396,6 +405,14 @@ class AppStore {
 		void metaSet(RECOVERY_ACK_KEY, this.recoveryAck);
 	}
 
+	/** Re-arm the save-your-recovery-code prompt (SC-ARC-ENC-6: the user may
+	 *  re-display the prompt at any later time from ledger settings). */
+	resetRecoveryAck(ledgerId: UUID): void {
+		if (!this.recoveryAck.includes(ledgerId)) return;
+		this.recoveryAck = this.recoveryAck.filter((id) => id !== ledgerId);
+		void metaSet(RECOVERY_ACK_KEY, this.recoveryAck);
+	}
+
 	/** Client-side validation of a pasted join code (SC-ARC-ENC-4). The actual
 	 *  remote fetch + fingerprint-vs-metadata check (SC-ARC-ENC-3) needs the
 	 *  OneDrive provider and lands in Phase 6, so this only proves the code is
@@ -524,6 +541,14 @@ class AppStore {
 		window.addEventListener('offline', () => {
 			if (this._syncState !== 'syncing') this._syncState = 'offline';
 		});
+		// Periodic foreground pull so a peer's change shows up on its own,
+		// no manual "Sync now" needed. No-op when hidden/offline; runSync's
+		// per-ledger in-flight guard prevents overlap with a focus/manual run.
+		setInterval(() => {
+			if (document.visibilityState === 'visible' && navigator.onLine !== false) {
+				void this.syncAllConnected();
+			}
+		}, FOREGROUND_POLL_MS);
 	}
 
 	/**

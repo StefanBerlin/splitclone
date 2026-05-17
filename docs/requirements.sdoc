@@ -1,7 +1,7 @@
 [DOCUMENT]
 TITLE: SplitClone - Software Requirements Specification
 UID: SC-SRS
-VERSION: 0.13 (draft)
+VERSION: 0.14 (draft)
 DATE: 2026-05-17
 PREFIX: SC-
 OPTIONS:
@@ -618,9 +618,14 @@ UID: SC-FR-SYN-1
 TITLE: Background sync
 STATEMENT: >>>
 The app shall pull remote changes from the shared folder whenever it is
-opened or brought to the foreground, and shall push local changes to the
-shared folder within 10 seconds of the user committing them, network
-permitting.
+opened or brought to the foreground, and additionally at a periodic
+interval while it remains in the foreground and connected, so that a
+peer's change appears without any manual action. It shall push local
+changes to the shared folder within 10 seconds of the user committing
+them, network permitting. Periodic polling shall pause while the app is
+hidden or offline (the backend offers no push channel, so a bounded poll
+is the propagation mechanism; the interval is a tunable constant balancing
+freshness against request volume and battery, SRS Q2).
 <<<
 
 [REQUIREMENT]
