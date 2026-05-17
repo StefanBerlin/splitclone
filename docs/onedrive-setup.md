@@ -5,7 +5,25 @@ only when an OAuth client id is configured. This is a one-time, free
 registration in your own Microsoft account — no Azure subscription, no Apple
 Developer Program, no server.
 
-## 1. Register the app (free)
+## Who does what (read this first)
+
+The app registration in section 1 happens **exactly once for the whole
+app — not once per person.** It produces a public **client id** (not a
+secret) that is baked into the build and shared by every user. Each person
+then signs in with **their own** Microsoft account; that per-user OAuth
+consent is what grants access to *their own* OneDrive. The registration
+only identifies the app — it never grants anyone access to anyone else's
+files.
+
+| Who | What they do |
+| --- | --- |
+| Whoever builds/deploys SplitClone | Sections 1 + 2, **once**. |
+| Every user (ledger creator + everyone who joins) | Skip to section 3: **Connect OneDrive**, sign in, done. Nothing to register, no Azure account, no client id to copy. |
+
+(If you both deploy *and* use it, you naturally do all of it — but still
+only register once.)
+
+## 1. Register the app — once, by whoever builds/deploys it (free)
 
 1. Go to <https://entra.microsoft.com> → **App registrations** → **New
    registration**.
@@ -15,6 +33,12 @@ Developer Program, no server.
 4. **Redirect URI:** platform **Single-page application (SPA)**, value
    `http://localhost:5173/auth/callback` for local dev. Add your deployed
    URL later too, e.g. `https://<you>.github.io/splitclone/auth/callback`.
+   This list is per *origin*, **not** per person — every user hitting the
+   same deployed URL shares the same redirect URI, so you add one entry per
+   place the app is served from, never one per user. It must match the URL
+   the app is actually loaded from character-for-character (scheme, host,
+   port, path, no trailing slash) or sign-in fails with
+   `invalid_request: ... redirect_uri ... not valid`.
 5. Create. **Do not** create a client secret — this is a public PKCE client.
 6. **API permissions** → Add → Microsoft Graph → **Delegated** →
    `Files.ReadWrite` → Add. (That plus the implicit `offline_access`/`openid`
@@ -43,7 +67,8 @@ Settings → Sync.
    ledger**, paste the recovery code, tap **Join from OneDrive**. The app
    scans folders shared with their account and adopts the one whose
    metadata key-fingerprint matches the code (SC-ARC-ENC-3). No folder
-   picker, no ledger id to copy.
+   picker, no ledger id to copy — and, as above, **no app registration**:
+   they only sign in with their own Microsoft account.
 
 ## Security notes
 
