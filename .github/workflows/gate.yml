@@ -23,6 +23,14 @@ on:
         type: boolean
         default: false
 
+# Run the bundled JS actions (checkout/setup-node/cache/setup-python/
+# upload-artifact) on Node 24 now, instead of the deprecated Node 20 the
+# runner still defaults to. Official opt-in per
+# https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+# — no action-version guessing, removable once Node 24 is the runner default.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   contents: read
 
