@@ -14,9 +14,14 @@
 	const youOwe = $derived(entries.filter((e) => e.amount > 0n));
 	const owedToYou = $derived(entries.filter((e) => e.amount < 0n));
 	const net = $derived(entries.reduce((s, e) => s - e.amount, 0n));
+	const totalOwe = $derived(youOwe.reduce((s, e) => s + e.amount, 0n));
+	const totalOwed = $derived(owedToYou.reduce((s, e) => s - e.amount, 0n));
 
 	function name(id: string): string {
 		return ledger.participants.get(id)?.name ?? id;
+	}
+	function initial(id: string): string {
+		return (name(id).trim()[0] ?? '?').toUpperCase();
 	}
 	// resolve() applies the base path; the prefill query is appended after it
 	// (orthogonal to base-path safety, so the ResolvedPathname brand is kept).
@@ -43,10 +48,30 @@
 			>
 		</div>
 	{:else}
+		<div class="summary-card">
+			<span class="summary-label">
+				{net > 0n ? 'You are owed' : net < 0n ? 'You owe in total' : 'All settled up'}
+			</span>
+			<span class="summary-amount" class:pos={net > 0n} class:neg={net < 0n}>
+				{euro(net < 0n ? -net : net)}
+			</span>
+			<div class="summary-split">
+				<div>
+					<span>You owe</span>
+					<strong class="neg">{euro(totalOwe)}</strong>
+				</div>
+				<div>
+					<span>You are owed</span>
+					<strong class="pos">{euro(totalOwed)}</strong>
+				</div>
+			</div>
+		</div>
+
 		{#if youOwe.length}
 			<p class="section-head">You owe</p>
 			{#each youOwe as b (b.participantId)}
 				<a class="row" href={settleHref(b.participantId, b.amount)}>
+					<span class="glyph">{initial(b.participantId)}</span>
 					<span class="grow">{name(b.participantId)}</span>
 					<span class="amount neg">{euro(b.amount)}</span>
 				</a>
@@ -57,16 +82,12 @@
 			<p class="section-head">You are owed</p>
 			{#each owedToYou as b (b.participantId)}
 				<a class="row" href={settleHref(b.participantId, b.amount)}>
+					<span class="glyph">{initial(b.participantId)}</span>
 					<span class="grow">{name(b.participantId)}</span>
 					<span class="amount pos">{euro(-b.amount)}</span>
 				</a>
 			{/each}
 		{/if}
-
-		<p class="section-head">Net</p>
-		<p class="amount" class:pos={net > 0n} class:neg={net < 0n}>
-			{net > 0n ? 'You are owed ' : net < 0n ? 'You owe ' : 'Even: '}{euro(net < 0n ? -net : net)}
-		</p>
 
 		<a
 			class="btn btn-block"

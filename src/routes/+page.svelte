@@ -27,6 +27,7 @@
 				href={resolve('/ledger/[ledgerId]', { ledgerId: l.id })}
 				style="margin-bottom: var(--space-3)"
 			>
+				<span class="glyph">{(l.name.trim()[0] ?? '?').toUpperCase()}</span>
 				<span class="grow">
 					<strong>{l.name}</strong><br />
 					<span class="muted"
