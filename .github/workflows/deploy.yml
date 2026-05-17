@@ -63,6 +63,14 @@ jobs:
           PUBLIC_MS_CLIENT_ID: ${{ vars.PUBLIC_MS_CLIENT_ID }}
         run: pnpm build
 
+      # GitHub Pages serves 404.html for any path it can't resolve to a
+      # file. Publishing the SPA shell under that name makes client-side
+      # deep links / hard refreshes (e.g. /splitclone/ledger/<id>) boot the
+      # app instead of hitting Pages' generic 404. Root still serves
+      # index.html (HTTP 200); only unknown paths use 404.html.
+      - name: SPA fallback for GitHub Pages deep links
+        run: cp build/index.html build/404.html
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
