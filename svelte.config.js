@@ -48,7 +48,24 @@ const config = {
 				'style-src': ['self', 'unsafe-inline'],
 				'img-src': ['self', 'data:'],
 				'font-src': ['self'],
-				'connect-src': ['self', 'https://graph.microsoft.com', 'https://login.microsoftonline.com'],
+				// Graph + auth, PLUS the content hosts Graph 302-redirects file
+				// downloads/uploads to. /content never returns bytes from
+				// graph.microsoft.com itself: consumer OneDrive uses
+				// *.1drv.com / my.microsoftpersonalcontent.com / *.svc.ms,
+				// OneDrive for Business uses *.sharepoint.com. Without these,
+				// reading ledger.json throws "Network error talking to
+				// OneDrive" (the redirect target is blocked). script-src stays
+				// locked to 'self' — connect-src breadth to Microsoft-owned
+				// content domains is the accepted, weaker control here.
+				'connect-src': [
+					'self',
+					'https://graph.microsoft.com',
+					'https://login.microsoftonline.com',
+					'https://*.sharepoint.com',
+					'https://*.1drv.com',
+					'https://my.microsoftpersonalcontent.com',
+					'https://*.svc.ms'
+				],
 				'base-uri': ['self'],
 				'object-src': ['none'],
 				'frame-ancestors': ['none'],
