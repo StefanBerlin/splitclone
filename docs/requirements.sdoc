@@ -17,14 +17,13 @@ TITLE: Introduction
 [TEXT]
 STATEMENT: >>>
 SplitClone is an iOS application for tracking shared expenses among a small,
-trusted group of people (e.g. a household, a couple, a trip group). It is
-functionally inspired by Splitwise but deliberately avoids any dedicated
+trusted group of people (e.g. a household, a couple, a trip group). It deliberately avoids any dedicated
 backend service. Instead, the shared state lives in a single folder that the
 users share among themselves through an existing consumer file-sync service,
 primarily Microsoft OneDrive.
 
 This document specifies the requirements for the Minimum Viable Product (MVP).
-Features that exist in Splitwise but are out of scope for the MVP are listed
+Features that are out of scope for the MVP are listed
 explicitly in section "Out of Scope".
 <<<
 
@@ -407,7 +406,7 @@ balance between the two participants accordingly.
 UID: SC-FR-BAL-4
 TITLE: No automatic debt simplification (MVP)
 STATEMENT: >>>
-The MVP shall present raw pairwise balances. Splitwise's "simplify debts"
+The MVP shall present raw pairwise balances. "simplify debts"
 re-routing of payments through third parties is out of scope.
 <<<
 
