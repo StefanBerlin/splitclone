@@ -160,6 +160,21 @@ export async function segmentsDeleteByLedger(ledgerId: string): Promise<void> {
 	});
 }
 
+/** Delete a ledger's segments NOT authored by `keepDeviceId`. Used to
+ *  self-heal the local-only demo ledger if a prior bug pulled another
+ *  device's (differently-keyed) segments into it. */
+export async function segmentsDeleteForeign(
+	ledgerId: string,
+	keepDeviceId: string
+): Promise<number> {
+	const all = await segmentsByLedger(ledgerId);
+	const foreign = all.filter((s) => s.deviceId !== keepDeviceId);
+	for (const s of foreign) {
+		await tx('segments', 'readwrite', (st) => st.delete(s.id));
+	}
+	return foreign.length;
+}
+
 export async function keyGet(ledgerId: string): Promise<KeyRecord | undefined> {
 	return tx<KeyRecord | undefined>('keys', 'readonly', (s) => s.get(ledgerId));
 }

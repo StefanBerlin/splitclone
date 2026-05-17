@@ -29,8 +29,15 @@ const dec = new TextDecoder();
 /** Fold input: every segment of a ledger, decrypted and ordered so a device's
  *  events are contiguous and chronological (fold re-sorts globally anyway).
  *  Decryption failure is thrown, never swallowed (SC-ARC-ENC-2). */
-export async function loadLedgerEvents(ledgerId: string, key: CryptoKey): Promise<LedgerEvent[]> {
-	const segs = await segmentsByLedger(ledgerId);
+export async function loadLedgerEvents(
+	ledgerId: string,
+	key: CryptoKey,
+	/** Restrict to one device's segments. Used by the local-only demo ledger,
+	 *  whose per-device key cannot open any other device's segments. */
+	onlyDeviceId?: string
+): Promise<LedgerEvent[]> {
+	let segs = await segmentsByLedger(ledgerId);
+	if (onlyDeviceId !== undefined) segs = segs.filter((s) => s.deviceId === onlyDeviceId);
 	segs.sort((a, b) =>
 		a.deviceId !== b.deviceId
 			? a.deviceId < b.deviceId

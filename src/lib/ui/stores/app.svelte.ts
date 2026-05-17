@@ -20,7 +20,7 @@ import type {
 	UUID
 } from '$lib/domain';
 import { getDeviceId } from '$lib/platform/device-id';
-import { keyGet, keyPut, metaGet, metaSet } from '$lib/storage/indexed-db';
+import { keyGet, keyPut, metaGet, metaSet, segmentsDeleteForeign } from '$lib/storage/indexed-db';
 import { dataKeyFingerprint, generateDataKey, importDataKey } from '$lib/storage/encryption';
 import { decodeJoinCode, encodeJoinCode } from '$lib/storage/join-code';
 import { appendEvent, deleteLedgerSegments, loadLedgerEvents } from '$lib/storage/segment-store';
@@ -37,6 +37,21 @@ export type SyncState = 'idle' | 'syncing' | 'offline' | 'error';
 /** SC-FR-SYN-1: a commit must reach the shared folder within 10 s. We coalesce
  *  a burst of commits behind one timer well inside that budget. */
 const AUTO_SYNC_DEBOUNCE_MS = 3000;
+
+/** Turn an opaque thrown value into something a user can act on. Bare
+ *  DOMExceptions (notably WebCrypto's `OperationError`, whose message is the
+ *  unhelpful "The operation failed for an operation-specific reason") are the
+ *  reason this exists. */
+function describeError(err: unknown): string {
+	if (typeof DOMException !== 'undefined' && err instanceof DOMException) {
+		if (err.name === 'OperationError') {
+			return 'Could not decrypt synced data (key mismatch or corrupted segment).';
+		}
+		return `${err.name}: ${err.message || 'no detail'}`;
+	}
+	if (err instanceof Error) return err.message || err.name;
+	return String(err);
+}
 
 export interface LedgerSummary {
 	id: UUID;
@@ -138,7 +153,25 @@ class AppStore {
 						fingerprint: rec.fingerprint,
 						root: rec.root
 					};
-					loaded[id] = await loadLedgerEvents(id, rec.key);
+					try {
+						if (id === DEMO_LEDGER_ID) {
+							// The demo ledger is local-only with a per-device key. A
+							// prior bug auto-synced it under a shared constant path;
+							// purge any other device's (un-decryptable) segments that
+							// leaked in, and only ever fold this device's own.
+							const purged = await segmentsDeleteForeign(id, this._deviceId);
+							if (purged > 0) {
+								console.warn(`[app] removed ${purged} foreign segment(s) from the demo ledger`);
+							}
+							loaded[id] = await loadLedgerEvents(id, rec.key, this._deviceId);
+						} else {
+							loaded[id] = await loadLedgerEvents(id, rec.key);
+						}
+					} catch (e) {
+						// Isolate: one unreadable ledger must not blank the others.
+						console.error(`[app] failed to load ledger ${id}`, e);
+						loaded[id] = [];
+					}
 				})
 			);
 			this.logs = loaded;
@@ -381,8 +414,15 @@ class AppStore {
 		this.logs[id] = await loadLedgerEvents(id, key);
 	}
 
+	/** The seed/demo ledger is local-only: a constant id but a per-device key,
+	 *  so it must never round-trip through the shared OneDrive path. */
+	private isSyncable(ledgerId: UUID): boolean {
+		return ledgerId !== DEMO_LEDGER_ID;
+	}
+
 	/** Manual sync (SC-FR-SYN-2): force an immediate pull+push for one ledger. */
 	async syncNow(ledgerId: UUID): Promise<void> {
+		if (!this.isSyncable(ledgerId)) return; // demo ledger: nothing to sync
 		if (!this._connected) {
 			this._syncError = 'Not connected to OneDrive.';
 			this._syncState = 'error';
@@ -396,6 +436,7 @@ class AppStore {
 	 *  debounced run, a focus run and a manual run can't collide on one folder.
 	 *  `offline` is reported, not treated as a hard error (SC-FR-SYN-3). */
 	private async runSync(ledgerId: UUID): Promise<void> {
+		if (!this.isSyncable(ledgerId)) return;
 		if (!this._connected || this.syncing.has(ledgerId)) return;
 		const fp = this.keyMeta[ledgerId]?.fingerprint;
 		if (!fp) return;
@@ -414,7 +455,7 @@ class AppStore {
 			this._syncState = 'idle';
 		} catch (err) {
 			this._syncState = 'error';
-			this._syncError = err instanceof Error ? err.message : String(err);
+			this._syncError = describeError(err);
 			console.error('[app] sync failed', err);
 		} finally {
 			this.syncing.delete(ledgerId);
@@ -434,6 +475,7 @@ class AppStore {
 	/** Coalesce a burst of commits behind one timer (non-resetting, so it can't
 	 *  be starved past the SC-FR-SYN-1 10 s budget) and then push. */
 	private scheduleAutoSync(ledgerId: UUID): void {
+		if (!this.isSyncable(ledgerId)) return;
 		if (!this.oneDriveConfigured || !this._connected) return;
 		if (!this.keyMeta[ledgerId]?.fingerprint) return;
 		if (this.autoTimers[ledgerId] !== undefined) return; // already pending
@@ -507,7 +549,7 @@ class AppStore {
 				error: 'No shared ledger matches this code. Ask the owner to share the folder with you.'
 			};
 		} catch (err) {
-			return { ok: false, error: err instanceof Error ? err.message : String(err) };
+			return { ok: false, error: describeError(err) };
 		}
 	}
 }
