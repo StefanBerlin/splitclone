@@ -3,7 +3,7 @@
 **Route:** `/ledger/[ledgerId]/balances`
 **Requirements:** SC-FR-BAL-1, SC-FR-BAL-2, SC-FR-BAL-3, SC-FR-BAL-4
 
-The Splitwise-defining screen. Shows, for the participant claimed by this
+The core balances screen. Shows, for the participant claimed by this
 device, every counterparty and whether the current user owes or is owed.
 Raw pairwise — no debt-simplification re-routing (SC-FR-BAL-4).
 
