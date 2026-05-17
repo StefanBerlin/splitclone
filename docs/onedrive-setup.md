@@ -67,14 +67,24 @@ Settings → Sync.
    automatic: changes push within ~3 s (≤10 s budget, SC-FR-SYN-1) and a
    pull runs whenever the app is opened or refocused. **Sync now** still
    exists for an immediate forced cycle.
-2. In OneDrive (web or app), the creator **shares that ledger folder** with
-   the other people's Microsoft accounts (edit permission).
+2. In OneDrive (web or app), the creator shares **either**:
+   - the specific ledger folder `Apps/SplitClone/<ledgerId>` (the
+     `<ledgerId>` is shown in the app under the ledger's **Settings →
+     Ledger ID**), **or**
+   - the whole `Apps/SplitClone` parent folder once — then every current
+     and future ledger is joinable without sharing again.
+
+   Give the other people's Microsoft accounts **edit** permission.
+   Sharing a hand-made folder of some other name does nothing — it must
+   be the app's actual `Apps/SplitClone` (or a `<ledgerId>` child of it).
 3. Each other person: connect OneDrive in SplitClone, go to **Join a
    ledger**, paste the recovery code, tap **Join from OneDrive**. The app
-   scans folders shared with their account and adopts the one whose
-   metadata key-fingerprint matches the code (SC-ARC-ENC-3). No folder
-   picker, no ledger id to copy — and, as above, **no app registration**:
-   they only sign in with their own Microsoft account.
+   scans folders shared with their account — and one level inside each, so
+   sharing the parent works — plus their own `Apps/SplitClone` (same-account
+   multi-device needs no sharing), and adopts the folder whose metadata
+   key-fingerprint matches the code (SC-ARC-ENC-3). No folder picker, no
+   ledger id to copy — and, as above, **no app registration**: they only
+   sign in with their own Microsoft account.
 4. The joiner is then asked **“who are you in this ledger?”** — they pick an
    existing name the creator already added, or add themselves. This binds
    their device to one participant (SC-FR-PRT-2); it’s a one-time prompt per

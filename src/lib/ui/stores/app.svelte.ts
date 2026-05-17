@@ -27,7 +27,11 @@ import { appendEvent, deleteLedgerSegments, loadLedgerEvents } from '$lib/storag
 import { isOneDriveConfigured } from '$lib/auth/config';
 import { getAccessToken, isConnected, disconnect } from '$lib/auth/token-store';
 import { OneDriveGraphProvider, type RootRef } from '$lib/storage/providers/onedrive-graph';
-import { listOwnLedgerFolders, listSharedFolders } from '$lib/storage/providers/shared';
+import {
+	listOwnLedgerFolders,
+	listSharedChildFolders,
+	listSharedFolders
+} from '$lib/storage/providers/shared';
 import { checkRemoteLedger, syncLedger } from '$lib/sync/engine';
 import { DEMO_LEDGER_ID, seedEvents } from './seed';
 
@@ -572,7 +576,17 @@ class AppStore {
 				listOwnLedgerFolders(getAccessToken),
 				listSharedFolders(getAccessToken)
 			]);
-			const roots: RootRef[] = [...own.map((f) => f.root), ...shared.map((f) => f.root)];
+			// A shared item may be the ledger folder itself, or the parent
+			// SplitClone folder shared once for all ledgers — so also descend
+			// one level into each shared folder.
+			const sharedChildren = (
+				await Promise.all(shared.map((f) => listSharedChildFolders(getAccessToken, f.root)))
+			).flat();
+			const roots: RootRef[] = [
+				...own.map((f) => f.root),
+				...shared.map((f) => f.root),
+				...sharedChildren.map((f) => f.root)
+			];
 			for (const root of roots) {
 				const provider = new OneDriveGraphProvider(getAccessToken, root);
 				try {
