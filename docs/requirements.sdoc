@@ -1,7 +1,7 @@
 [DOCUMENT]
 TITLE: SplitClone - Software Requirements Specification
 UID: SC-SRS
-VERSION: 0.12 (draft)
+VERSION: 0.13 (draft)
 DATE: 2026-05-17
 PREFIX: SC-
 OPTIONS:
@@ -176,9 +176,15 @@ UID: SC-FR-PRT-2
 TITLE: Claim a participant identity
 STATEMENT: >>>
 When a user opens a ledger for the first time on their device, the app shall
-let them either (a) claim an existing unclaimed participant entry, or (b)
-create a new participant and claim it. A device shall be bound to exactly one
-participant per ledger.
+let them either (a) claim an existing unclaimed participant entry, (b) create
+a new participant and claim it, or (c) re-claim a participant that is already
+claimed on another device, when the same person is adding a further device
+(e.g. PC + phone). A device shall be bound to exactly one participant per
+ledger; a participant may be bound to more than one device. Claiming moves
+the claiming device only — other devices already bound to a participant are
+unaffected. The claim screen shall present (c) candidates separately from (a)
+and make clear that picking one links the new device to the same person
+rather than creating a duplicate.
 <<<
 RATIONALE: >>>
 Because there is no central account system, a "user" is just whichever
@@ -896,6 +902,13 @@ prompted to claim a participant identity again as if it were a new device
 (SC-FR-PRT-2). The previous device's log segments in the shared folder
 remain valid history and shall continue to contribute to the derived
 state; they simply receive no further appends.
+
+A new device id does not have to mean a new participant: the same person
+re-running the app (after eviction, or simply on an additional device)
+re-claims their existing participant via SC-FR-PRT-2 (c). The participant
+then has both device ids bound to it; balances and "you" attribution stay
+on the one identity. Authorship is still per device id (SC-ARC-IDN-2);
+only the participant↔device binding is many-to-one.
 <<<
 
 [REQUIREMENT]

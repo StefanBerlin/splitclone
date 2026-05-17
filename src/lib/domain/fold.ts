@@ -38,7 +38,8 @@ function apply(state: DerivedState, ev: LedgerEvent): DerivedState {
 		case 'ParticipantAdded':
 			state.participants.set(ev.payload.participantId, {
 				id: ev.payload.participantId,
-				name: ev.payload.name
+				name: ev.payload.name,
+				claimedByDeviceIds: []
 			});
 			return state;
 
@@ -49,8 +50,21 @@ function apply(state: DerivedState, ev: LedgerEvent): DerivedState {
 		}
 
 		case 'ParticipantClaimed': {
-			const p = state.participants.get(ev.payload.participantId);
-			if (p) p.claimedByDeviceId = ev.payload.deviceId;
+			const target = state.participants.get(ev.payload.participantId);
+			if (!target) return state;
+			// A device is bound to exactly one participant (SC-FR-PRT-2): drop
+			// this device from anyone else first, so re-claiming moves it
+			// rather than leaving a stale binding. Co-devices on the old
+			// participant are untouched — only this device migrates.
+			const dev = ev.payload.deviceId;
+			for (const p of state.participants.values()) {
+				if (p !== target && p.claimedByDeviceIds.includes(dev)) {
+					p.claimedByDeviceIds = p.claimedByDeviceIds.filter((d) => d !== dev);
+				}
+			}
+			// Accumulate (idempotent): a person on PC + phone claims the same
+			// participant from each, so multiple devices coexist here.
+			if (!target.claimedByDeviceIds.includes(dev)) target.claimedByDeviceIds.push(dev);
 			return state;
 		}
 

@@ -41,11 +41,14 @@
 		}
 	}
 
-	function claimState(p: { id: string; claimedByDeviceId?: string }): string {
-		if (!p.claimedByDeviceId) return 'not yet claimed';
-		return p.claimedByDeviceId === app.deviceId
-			? 'claimed on this device'
-			: 'claimed on another device';
+	function claimState(p: { id: string; claimedByDeviceIds: string[] }): string {
+		const ids = p.claimedByDeviceIds;
+		if (ids.length === 0) return 'not yet claimed';
+		const here = ids.includes(app.deviceId);
+		const others = ids.filter((d) => d !== app.deviceId).length;
+		if (here)
+			return others > 0 ? `claimed here + ${others} other device(s)` : 'claimed on this device';
+		return others > 1 ? `claimed on ${others} other devices` : 'claimed on another device';
 	}
 
 	let theme = $state<'system' | 'light' | 'dark'>('system');

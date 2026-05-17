@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { fold } from './fold';
-import { deviceClaim, unclaimedParticipants } from './selectors';
+import { deviceClaim, participantsClaimedElsewhere, unclaimedParticipants } from './selectors';
 import type { LedgerEvent } from './types';
 import { ev, instant } from './_testkit';
 
@@ -42,5 +42,30 @@ describe('unclaimedParticipants (SC-FR-PRT-2a / SC-FR-PRT-4)', () => {
 		// Bo never runs the app (SC-FR-PRT-4) but must remain claimable.
 		const s = fold([...base, claim('p-anna', 'd', 10)]);
 		expect(unclaimedParticipants(s).map((p) => p.id)).toContain('p-bo');
+	});
+});
+
+describe('participantsClaimedElsewhere (SC-FR-PRT-2c — second device)', () => {
+	it('lists identities bound to other devices so a 2nd device can re-claim', () => {
+		// Anna is set up on dev-pc; her phone (dev-phone) has claimed no one.
+		const s = fold([...base, claim('p-anna', 'dev-pc', 10)]);
+		expect(participantsClaimedElsewhere(s, 'dev-phone').map((p) => p.id)).toEqual(['p-anna']);
+	});
+
+	it('excludes participants this device already holds', () => {
+		const s = fold([...base, claim('p-anna', 'dev-pc', 10), claim('p-bo', 'dev-phone', 11)]);
+		// dev-phone holds Bo; Anna (other device) is offered, Bo is not.
+		expect(participantsClaimedElsewhere(s, 'dev-phone').map((p) => p.id)).toEqual(['p-anna']);
+	});
+
+	it('is empty when nobody else has claimed anything', () => {
+		expect(participantsClaimedElsewhere(fold(base), 'dev-x')).toEqual([]);
+	});
+
+	it('does not list a participant once this device co-claims it', () => {
+		const s = fold([...base, claim('p-anna', 'dev-pc', 10), claim('p-anna', 'dev-phone', 11)]);
+		expect(participantsClaimedElsewhere(s, 'dev-phone')).toEqual([]);
+		expect(deviceClaim(s, 'dev-phone')?.id).toBe('p-anna');
+		expect(deviceClaim(s, 'dev-pc')?.id).toBe('p-anna');
 	});
 });

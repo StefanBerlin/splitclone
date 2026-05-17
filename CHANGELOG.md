@@ -27,6 +27,30 @@ deliberate, not accidental.
 
 ### Change log within v1 (development)
 
+- 2026-05-17 — **Multi-device participant claim.** A participant may now be
+  claimed by several devices (one person on PC + phone), where before the
+  most recent `ParticipantClaimed` silently won and the other device was
+  pushed into creating a duplicate participant. The derived `Participant`
+  now carries `claimedByDeviceIds: UUID[]` instead of a scalar
+  `claimedByDeviceId`, and the `ParticipantClaimed` fold accumulates the
+  device into a set while still removing it from any other participant (a
+  device remains bound to exactly one participant — SC-FR-PRT-2). Approved
+  by the project owner before implementation (recorded decision).
+  **No schema-version bump.** None of SC-ARC-FMT-1 (a)–(f) change: the
+  `ParticipantClaimed` payload is still exactly `{participantId, deviceId}`
+  and no event type was added/removed. Only the in-memory fold
+  interpretation and the derived-state shape change, and the derived state
+  is explicitly _not_ part of the file format (SC-ARC-FMT-1). Migration on
+  read: none required — historical single-claim logs fold forward
+  unchanged (one claim → a 1-element set). Cross-version interaction: a
+  not-yet-updated (old) device reading a ledger that now has a participant
+  claimed by two devices degrades to the previous last-write-wins behaviour
+  (it recognises only one of the devices) — no corruption, and a bump would
+  be wrong here because SC-ARC-FMT-2 forbids implicit version increments
+  and would needlessly lock every old device out of _all_ ledgers for an
+  additive, backward-compatible behaviour change. SRS SC-FR-PRT-2 and
+  SC-ARC-IDN-1 updated in lockstep (requirements.sdoc v0.13).
+
 - 2026-05-17 — Finalised the CSV export format (SC-ARC-FMT-1 item (f),
   SC-FR-EXR-4). UTF-8; CRLF records with a trailing CRLF; RFC-4180 quoting
   (quote when a field has `"`, comma, CR or LF; inner quotes doubled);

@@ -2,22 +2,36 @@
 import type { DerivedState, Expense, Participant, UUID } from './types';
 
 /** The participant a given device has claimed in this ledger, if any
- *  (SC-FR-PRT-2 — a device is bound to exactly one participant). */
+ *  (SC-FR-PRT-2 — a device is bound to exactly one participant; a participant
+ *  may be bound to several devices). */
 export function deviceClaim(state: DerivedState, deviceId: UUID): Participant | undefined {
 	for (const p of state.participants.values()) {
-		if (p.claimedByDeviceId === deviceId) return p;
+		if (p.claimedByDeviceIds.includes(deviceId)) return p;
 	}
 	return undefined;
 }
 
-/** Participants no device has claimed yet — the candidates a freshly-joined
- *  device may adopt instead of creating a new entry (SC-FR-PRT-2 (a)). This
- *  intentionally includes deviceless placeholder participants (SC-FR-PRT-4):
- *  claiming one is exactly how a real person attaches to a pre-made entry. */
+const byName = (a: Participant, b: Participant) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+
+/** Participants no device has claimed yet — the primary candidates a
+ *  freshly-joined device may adopt instead of creating a new entry
+ *  (SC-FR-PRT-2 (a)). Intentionally includes deviceless placeholder
+ *  participants (SC-FR-PRT-4): claiming one is how a real person attaches to
+ *  a pre-made entry. */
 export function unclaimedParticipants(state: DerivedState): Participant[] {
 	return [...state.participants.values()]
-		.filter((p) => !p.claimedByDeviceId)
-		.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+		.filter((p) => p.claimedByDeviceIds.length === 0)
+		.sort(byName);
+}
+
+/** Participants already bound to some *other* device (not `deviceId`). These
+ *  are still valid claim targets: the same person adding a second device
+ *  (PC + phone) re-claims their existing identity from the new device
+ *  (SC-FR-PRT-2). Excludes any participant this device already holds. */
+export function participantsClaimedElsewhere(state: DerivedState, deviceId: UUID): Participant[] {
+	return [...state.participants.values()]
+		.filter((p) => p.claimedByDeviceIds.length > 0 && !p.claimedByDeviceIds.includes(deviceId))
+		.sort(byName);
 }
 
 /** Participant display name, falling back to the raw id if unknown. */
