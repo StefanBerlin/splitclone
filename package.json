@@ -16,7 +16,8 @@
 		"test:unit": "vitest",
 		"test": "npm run test:unit -- --run && npm run test:e2e",
 		"test:e2e": "playwright install && playwright test",
-		"play": "vite-node scripts/play.ts"
+		"play": "vite-node scripts/play.ts",
+		"gen:icons": "node scripts/gen-icons.mjs"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^2.0.4",

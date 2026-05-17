@@ -536,15 +536,31 @@ Routing notes:
 A reusable `<MoneyInput>` component takes/returns `bigint` cents and never
 floats.
 
-## 9. Service Worker (SC-NFR-OFF-1)
+## 9. Service Worker (SC-NFR-OFF-1) — Phase 8
 
-- Registered from `app.html` post-load to avoid blocking first paint.
-- Caches the app shell (HTML/JS/CSS/manifest/icons) on install; serves
-  cache-first for those.
-- Network-first for `graph.microsoft.com/*` calls; falls back to "you're
-  offline" toast which the outbox handles.
-- No background sync API on iOS Safari — periodic push attempts happen
-  on every app focus (SC-FR-SYN-1).
+Implemented as `src/service-worker.ts` using SvelteKit's built-in
+`$service-worker` module. **Deviation (deliberate, same anti-dependency
+posture as hand-rolled Graph/PKCE/IDB): no `vite-plugin-pwa`.** SvelteKit
+already bundles + auto-registers the file from the built shell on `load`
+(production only, never in `dev`) and exposes the precise `build`/`files`/
+`version` lists — a plugin would add a dependency for nothing.
+
+- **Precache on install:** `build` (hashed immutable) + `files` (static,
+  incl. manifest + icons) + the SPA shell (`base + '/'`). Best-effort
+  (`Promise.allSettled`) so one unreachable asset can't fail the install.
+- **Assets:** cache-first (content-hashed, safe to serve stale).
+- **Navigations:** network-first, falling back to the cached shell so a
+  cold offline launch still boots; the client router then resolves the
+  route from IndexedDB.
+- **Cross-origin (`graph.microsoft.com`, OneDrive CDN): never intercepted**
+  — the SW returns without calling `respondWith`, so sync/auth always hit
+  the live network. Offline write durability is the data layer's job, not
+  the SW's: writes land in sealed IDB segments immediately and the sync
+  engine retries on `online`/focus (Phase 7), so there is no separate
+  outbox store.
+- `activate` deletes caches whose key ≠ `splitclone-${version}`.
+- No Background Sync API on iOS Safari — push attempts ride app focus /
+  the post-commit debounce (SC-FR-SYN-1).
 
 ## 10. Encryption key lifecycle
 
@@ -576,9 +592,12 @@ string is the only externalised form.
 - Public GitHub repo. CI builds the static bundle and writes a release
   manifest `bundle-manifest.json` enumerating every asset path with its
   SHA-256.
-- GitHub Pages deployment uses `vite-plugin-pwa`'s output verbatim. The
-  release tag in Git equals the `sw-version` in the Service Worker so a
-  user can verify which version they're running.
+- GitHub Pages deployment uses the `adapter-static` output verbatim
+  (no `vite-plugin-pwa`; the Service Worker is hand-rolled — see §9). The
+  release tag in Git should equal the SvelteKit `version` baked into the
+  Service Worker cache key (`splitclone-${version}`) so a user can verify
+  which version they're running. (Pinning `version` to the commit SHA is
+  part of the Phase 9 v1.0/verifiability hardening.)
 - `index.html` includes a `<meta name="splitclone-build" content="…">` with
   the commit SHA so support requests can identify exactly which build is
   affected.
