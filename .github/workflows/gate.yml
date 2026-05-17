@@ -1,0 +1,72 @@
+name: Gate
+
+# Single source of truth for "is this tree deployable?": format, lint,
+# typecheck, unit tests, and a production build. Called (never run directly)
+# by both ci.yml (on every PR, before merge) and deploy.yml (on main, before
+# publishing). Keeping it in ONE reusable workflow means the bar a PR must
+# clear is exactly the bar main is held to — they can never drift, so a green
+# PR cannot produce a red post-merge deploy.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node BEFORE pnpm: pnpm 11's installer needs Node >=22.13, so it
+      # cannot run on the runner's default Node. pnpm itself is provisioned
+      # by Corepack from the pinned "packageManager" field in package.json
+      # (same mechanism used locally) — no pnpm/action-setup.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable Corepack (pnpm pinned in package.json)
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.1.2 --activate
+
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Same bar as local (format/lint/typecheck/unit) plus a real build.
+      # e2e (Playwright) is intentionally excluded — heavier, not part of
+      # the smoke gate.
+      - name: Lint & format check
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm check
+
+      - name: Unit tests
+        run: pnpm test:unit -- --run
+
+      # Build here too: a tree that lints/typechecks can still fail the
+      # adapter-static build. This is the step that makes "deploy never
+      # fails after merge" actually true.
+      - name: Build
+        env:
+          # PKCE SPA client id — not a secret. Set as a repo Variable:
+          # Settings > Secrets and variables > Actions > Variables.
+          # If unset, the build still succeeds (auth/config.ts tolerates a
+          # missing id); OneDrive sign-in just won't work on the live site.
+          PUBLIC_MS_CLIENT_ID: ${{ vars.PUBLIC_MS_CLIENT_ID }}
+        run: pnpm build

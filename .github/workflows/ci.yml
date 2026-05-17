@@ -1,0 +1,26 @@
+name: CI
+
+# Runs the deployable-tree gate (gate.yml) on every pull request into main,
+# and on direct pushes to feature branches, so problems are caught BEFORE a
+# PR is merged — main is never the place a failure first shows up.
+#
+# To make this blocking, enable branch protection on `main`:
+#   Settings > Branches > Add rule > require status check "Gate / gate"
+#   (and "Require branches to be up to date before merging").
+# Without that, this still reports red on the PR but does not hard-block.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches-ignore: [main]
+  workflow_dispatch:
+
+# Don't pile up redundant runs on a branch that gets several quick pushes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    uses: ./.github/workflows/gate.yml

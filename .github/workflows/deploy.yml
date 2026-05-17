@@ -4,6 +4,12 @@ name: Deploy to GitHub Pages
 # adapter-static output and publishes it to a GitHub Pages *project* site
 # at https://stefanberlin.github.io/splitclone/ (see project memory:
 # deploy target — paths.base = '/splitclone' is set in svelte.config.js).
+#
+# The gate (format/lint/typecheck/unit/build) is the SAME reusable workflow
+# PRs run via ci.yml — see gate.yml. Deploy only runs if `gate` passes, so a
+# tree that would fail post-merge never reaches Pages. (The `build` job below
+# re-runs the build because it also needs the artifact to publish; the extra
+# ~1 min on main is the price of a guaranteed-good publish.)
 
 on:
   push:
@@ -23,7 +29,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Identical bar to every PR — ci.yml calls this same reusable workflow.
+  gate:
+    uses: ./.github/workflows/gate.yml
+
   build:
+    needs: gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,18 +66,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      # Project smoke gate — same bar as local (format/lint/typecheck/unit).
-      # e2e (Playwright) is intentionally excluded here; it is heavier and
-      # not part of the smoke gate.
-      - name: Lint & format check
-        run: pnpm lint
-
-      - name: Typecheck
-        run: pnpm check
-
-      - name: Unit tests
-        run: pnpm test:unit -- --run
 
       - name: Build
         env:
