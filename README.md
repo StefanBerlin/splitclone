@@ -4,7 +4,7 @@
 
 SplitClone is a privacy-first web app for tracking who paid for what in a group
 and who owes whom. It works like a typical shared-expenses app, but there is **no
-backend and no company in the middle**: your data lives encrypted in *your own*
+backend and no company in the middle**: your data lives encrypted in _your own_
 OneDrive folder, and sharing a ledger means sharing that folder. SplitClone is a
 static website (installable as a PWA) that reads and writes those files directly
 from your browser.
@@ -32,7 +32,7 @@ from your browser.
 - **Multi-device** — open the same ledger on your phone and your PC.
 
 Each ledger has a **recovery code**: a secret string that decrypts it. Anyone
-with the shared folder *and* the recovery code can read and contribute to the
+with the shared folder _and_ the recovery code can read and contribute to the
 ledger. Without the code, the files are unreadable — even to Microsoft.
 
 ---
@@ -51,10 +51,10 @@ subscription) is enough. No Azure subscription, no paid plan needed.
 
 There are **two different roles**, and most people only need the second one:
 
-| You are… | What you need to do |
-| --- | --- |
-| **Just using a SplitClone someone deployed** (the common case) | Nothing to register. Open the site, tap **Connect OneDrive**, sign in with your own Microsoft account. Done. |
-| **Deploying your own copy of SplitClone** | A one-time, free app registration in *your* Microsoft account so the app is allowed to talk to OneDrive (see below). |
+| You are…                                                       | What you need to do                                                                                                  |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| **Just using a SplitClone someone deployed** (the common case) | Nothing to register. Open the site, tap **Connect OneDrive**, sign in with your own Microsoft account. Done.         |
+| **Deploying your own copy of SplitClone**                      | A one-time, free app registration in _your_ Microsoft account so the app is allowed to talk to OneDrive (see below). |
 
 The app registration is done **once for the whole deployment**, not once per
 user. It only identifies the app — it never grants anyone access to anyone
@@ -103,7 +103,7 @@ Skip this if you're just using a copy someone else hosts.
 1. Go to <https://entra.microsoft.com> → **App registrations** → **New
    registration**.
 2. **Name:** anything, e.g. `SplitClone`.
-3. **Supported account types:** *Personal Microsoft accounts only*.
+3. **Supported account types:** _Personal Microsoft accounts only_.
 4. **Redirect URI:** platform **Single-page application (SPA)**. The app is
    served under a `/splitclone` base path, and `pnpm dev` mirrors that, so add
    **both** of these (keep localhost — don't replace it):
@@ -112,6 +112,7 @@ Skip this if you're just using a copy someone else hosts.
 
    It must match the URL the app is actually loaded from
    character-for-character or sign-in fails.
+
 5. Create it. **Do not** create a client secret — this is a public PKCE client.
 6. **API permissions** → Add → Microsoft Graph → **Delegated** →
    `Files.ReadWrite` → Add.
