@@ -3,8 +3,12 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { version } from '$app/environment';
 	import { app } from '$lib/ui/stores/app.svelte';
+	import { initTheme } from '$lib/ui/theme';
 
 	let { children } = $props();
+
+	// Apply the stored theme before the first screen renders (client-only SPA).
+	initTheme();
 </script>
 
 <svelte:head>

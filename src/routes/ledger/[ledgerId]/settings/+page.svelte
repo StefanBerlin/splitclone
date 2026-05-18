@@ -52,13 +52,6 @@
 		return others > 1 ? `claimed on ${others} other devices` : 'claimed on another device';
 	}
 
-	let theme = $state<'system' | 'light' | 'dark'>('system');
-	function applyTheme() {
-		const el = document.documentElement;
-		if (theme === 'system') delete el.dataset.theme;
-		else el.dataset.theme = theme;
-	}
-
 	function forget() {
 		if (
 			!confirm('Forget this ledger on this device? Local data only — nothing is deleted remotely.')
@@ -99,9 +92,10 @@
 		</p>
 	{:else if !app.connected}
 		<p class="muted" style="font-size:13px">
-			Not connected. Connect OneDrive to sync this ledger across devices and share it with others.
+			Not connected. Connect OneDrive in
+			<a href={resolve('/settings')}>Settings</a> to sync this ledger across devices and share it. The
+			connection is account-wide — one sign-in covers every ledger.
 		</p>
-		<a class="btn btn-primary btn-block" href={resolve('/auth/start')}>☁ Connect OneDrive</a>
 	{:else}
 		<p>
 			{#if app.syncState === 'syncing'}
@@ -126,9 +120,10 @@
 		>
 			Sync now
 		</button>
-		<button class="btn btn-block" style="margin-top:var(--space-2)" onclick={() => app.signOut()}>
-			Disconnect OneDrive
-		</button>
+		<p class="muted" style="font-size:13px">
+			Connect/disconnect OneDrive is in <a href={resolve('/settings')}>Settings</a> — it applies to every
+			ledger, not just this one.
+		</p>
 	{/if}
 
 	<p class="section-head">Sharing &amp; recovery</p>
@@ -186,16 +181,6 @@
 	<button class="btn btn-block" style="margin-top:var(--space-3)" onclick={addParticipant}
 		>+ Add a participant</button
 	>
-
-	<p class="section-head">This device</p>
-	<label class="field">
-		<span>Theme</span>
-		<select bind:value={theme} onchange={applyTheme}>
-			<option value="system">System</option>
-			<option value="light">Light</option>
-			<option value="dark">Dark</option>
-		</select>
-	</label>
 
 	<button class="btn btn-danger btn-block" style="margin-top:var(--space-6)" onclick={forget}>
 		Forget this ledger on this device
