@@ -426,6 +426,9 @@ textarea:focus {
 	width: 60px;
 	height: 60px;
 	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
 	background: linear-gradient(
 		135deg,
 		var(--accent) 0%,
@@ -435,11 +438,41 @@ textarea:focus {
 	border: none;
 	font-size: 30px;
 	line-height: 1;
+	text-decoration: none;
 	cursor: pointer;
 	box-shadow: var(--shadow-glow);
 	transition: transform 0.12s;
 }
 .fab:active {
+	transform: scale(0.92);
+}
+
+/* Global "go home" affordance, present on every screen except home itself.
+   Bottom-left so it never collides with the bottom-right primary FAB; same
+   84px bottom offset clears the ledger tab bar where one is present. */
+.home-btn {
+	position: fixed;
+	left: calc(var(--space-4) + env(safe-area-inset-left));
+	bottom: calc(84px + env(safe-area-inset-bottom));
+	z-index: 20;
+	width: 48px;
+	height: 48px;
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 22px;
+	line-height: 1;
+	text-decoration: none;
+	color: var(--text);
+	background: color-mix(in srgb, var(--surface) 88%, transparent);
+	border: 1px solid var(--border);
+	box-shadow: var(--shadow);
+	backdrop-filter: blur(18px) saturate(140%);
+	-webkit-backdrop-filter: blur(18px) saturate(140%);
+	transition: transform 0.12s;
+}
+.home-btn:active {
 	transform: scale(0.92);
 }
 

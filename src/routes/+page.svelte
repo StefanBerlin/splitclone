@@ -8,7 +8,11 @@
 
 <svelte:head><title>SplitClone</title></svelte:head>
 
-<div class="topbar"><span class="title">SplitClone</span></div>
+<div class="topbar">
+	<span></span>
+	<span class="title">SplitClone</span>
+	<a href={resolve('/settings')} aria-label="Settings">⚙</a>
+</div>
 
 <div class="screen">
 	{#if ledgers.length === 0}
@@ -41,5 +45,5 @@
 
 	<a class="btn btn-primary btn-block" href={resolve('/ledger/new')}>+ Create a new ledger</a>
 	<a class="btn btn-block" href={resolve('/ledger/join')}>Join with a code</a>
-	<a class="btn btn-block" href={resolve('/backup')}>Backup &amp; restore</a>
+	<a class="btn btn-block" href={resolve('/settings')}>Settings</a>
 </div>
