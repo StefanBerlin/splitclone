@@ -426,6 +426,9 @@ textarea:focus {
 	width: 60px;
 	height: 60px;
 	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
 	background: linear-gradient(
 		135deg,
 		var(--accent) 0%,
@@ -435,6 +438,7 @@ textarea:focus {
 	border: none;
 	font-size: 30px;
 	line-height: 1;
+	text-decoration: none;
 	cursor: pointer;
 	box-shadow: var(--shadow-glow);
 	transition: transform 0.12s;
