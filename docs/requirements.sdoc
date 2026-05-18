@@ -1,7 +1,7 @@
 [DOCUMENT]
 TITLE: SplitClone - Software Requirements Specification
 UID: SC-SRS
-VERSION: 0.15 (draft)
+VERSION: 0.16 (draft)
 DATE: 2026-05-17
 PREFIX: SC-
 OPTIONS:
@@ -651,9 +651,9 @@ TITLE: Backup and Restore
 
 [TEXT]
 STATEMENT: >>>
-Local backup / restore (formerly open question Q9). The design decisions
-were taken deliberately and approved by the project owner before
-implementation, per the SC-ARC-FMT-3 pre-1.0 rule. The backup file is a
+Local backup / restore. The design decisions were taken deliberately and
+approved by the project owner before implementation, per the
+SC-ARC-FMT-3 pre-1.0 rule. The backup file is a
 file-format member, SC-ARC-FMT-1 item (g); its on-the-wire schema is
 documented field-by-field in docs/backup-format.md, which is the
 authoritative reference for a future hand-restore.
@@ -667,7 +667,7 @@ The app shall export, in one user action, a single file containing the
 complete local application database needed to reconstruct app state on
 another device: every ledger's full event log, its data key in join-code
 form, key fingerprint, optional sync hint and recovery-acknowledged flag.
-Export is whole-database, not per-ledger (Q9 (d)); it is distinct from the
+Export is whole-database, not per-ledger; it is distinct from the
 per-ledger CSV export (SC-FR-EXR-*), which is a lossy accounting report.
 A ledger whose data key is not present on this device cannot be restored
 and shall be omitted from the file, with the user informed.
@@ -1573,58 +1573,27 @@ phase must close before implementation:
     Apple developer account for iOS distribution, which is the cost the
     web-app choice exists to avoid.
 
-  - Q8: Pre-implementation deliverables. Before any production code is
-    written, the project shall produce and review two artefacts that the
-    current spec does not yet contain:
+  - Q10: Splitwise-Export-Import. The app shall be able to parse a CSV
+    file exported from Splitwise and create (or restore into) a SplitClone
+    ledger from it - participants, expenses, splits and settlements
+    reconstructed as the equivalent SplitClone events. Stated user intent:
 
-      (a) Architecture design document. Diagrams and prose describing the
-          internal module layout (UI layer, domain model, event-log store,
-          SharedFolderProvider implementations, sync engine, export
-          engine), how data flows between them, and the threading / async
-          model. The architecture must demonstrably implement the
-          requirements in section "Storage and Sync Architecture".
+      (a) Input is the Splitwise CSV export. The exact column layout /
+          dialect will be supplied later; the parser must be written
+          against that real format, not guessed.
+      (b) Open: whether the import creates a brand-new ledger or can also
+          merge into an existing one; how Splitwise rows map onto the
+          event model (ExpenseCreated / SettlementRecorded / participants /
+          labels); currency handling (MVP is single-currency EUR,
+          SC-FR-EXP-2); and how unmapped Splitwise concepts are surfaced.
+      (c) This is an import mapper over user-provided data, not a new
+          member of the SplitClone file format (SC-ARC-FMT-1) - it writes
+          ordinary events through the existing model, so no schema-version
+          change. It is, however, a deliberate feature and will get its
+          own requirement(s) once the format is known.
 
-      (b) UI style mockups. Visual mockups of the main screens (ledger
-          list, expense list with filters, expense detail, expense entry,
-          label management, balances, settlement entry, export, sync
-          status). The mockups establish typography, colour palette,
-          spacing, iconography, dark-mode behaviour, and the iPhone
-          portrait baseline that will later be adapted to iPad (SC-NFR-PLT-2).
-
-    Review and sign-off on both artefacts is a prerequisite for starting
-    implementation. The format (Figma, hand-drawn, Markdown + Mermaid,
-    etc.) is left open.
-
-  - Q9: Local backup / restore. The app shall be able to export the
-    complete local application database (every ledger's full event log,
-    keys/join codes, device identity and app settings — everything needed
-    to fully reconstruct app state on a new device) to a single file, and
-    to re-import that file to restore it. Stated user intent:
-
-      (a) The backup is deliberately NOT encrypted and is human-readable
-          (e.g. JSON). This is an explicit, accepted exception to the
-          at-rest encryption posture (SC-ARC-ENC-*): the file contains
-          the data keys / join codes in clear, so anyone holding it can
-          read every ledger. Securing the exported file is explicitly the
-          user's responsibility, not the app's — the UI must say so at
-          export time.
-      (b) Restore semantics are open: full replace vs. merge into existing
-          state (the deterministic fold makes merge feasible, but key
-          collisions and device-identity handling need design — relates to
-          SC-FR-PRT-2 device claim and SC-ARC-LOG-1 sole-writer).
-      (c) The backup file is a new member of the file format (SC-ARC-FMT-1)
-          and therefore needs its own schema version + CHANGELOG entry and
-          falls under the SC-ARC-FMT-3 governance rule once defined.
-      (d) Open: whether restore is per-ledger selective or all-or-nothing,
-          and whether export is offered separately from the existing
-          per-ledger CSV export (SC-FR-EXR-*), which is a different
-          feature (accounting export, not a backup).
-
-    RESOLVED: scheduled and specified. The decisions were taken with the
-    project owner - (b) offer both merge and replace; (d) whole-database
-    export with per-ledger restore selection; device identity preserved on
-    restore - and are now normative requirements SC-FR-BAK-1..5 with the
-    file format documented in docs/backup-format.md (SC-ARC-FMT-1 item (g)).
+    Out of MVP scope; recorded so the design is deliberate when scheduled
+    and the exact Splitwise format is available.
 <<<
 
 [[/SECTION]]
