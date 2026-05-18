@@ -25,8 +25,9 @@ import type {
 	Participant,
 	UUID
 } from '$lib/domain';
-import { getDeviceId } from '$lib/platform/device-id';
-import { keyGet, keyPut, metaGet, metaSet } from '$lib/storage/indexed-db';
+import { getDeviceId, rememberDeviceId } from '$lib/platform/device-id';
+import { keyGet, keyPut, metaGet, metaSet, wipeAll } from '$lib/storage/indexed-db';
+import { buildBackup, dedupeById, parseBackup, serializeBackup } from '$lib/backup/backup';
 import { dataKeyFingerprint, generateDataKey, importDataKey } from '$lib/storage/encryption';
 import { decodeJoinCode, encodeJoinCode } from '$lib/storage/join-code';
 import { appendEvent, deleteLedgerSegments, loadLedgerEvents } from '$lib/storage/segment-store';
@@ -411,6 +412,162 @@ class AppStore {
 		if (!this.recoveryAck.includes(ledgerId)) return;
 		this.recoveryAck = this.recoveryAck.filter((id) => id !== ledgerId);
 		void metaSet(RECOVERY_ACK_KEY, this.recoveryAck);
+	}
+
+	// ---- Local backup / restore (SRS Q9, SC-FR-BAK-*) ---------------------
+	//
+	// The exported file is UNENCRYPTED and human-readable by design: it holds
+	// every ledger's join code in clear text (Q9 (a)). Securing it is the
+	// user's responsibility — the UI states this before download. Format and
+	// restore semantics: docs/backup-format.md + src/lib/backup/backup.ts.
+
+	/** Serialise the whole local DB to one backup file. Events are taken from
+	 *  the in-memory (decrypted) log; only ledgers whose key is present on
+	 *  this device can be restored later, so any without a join code are
+	 *  reported in `omitted` rather than written half-usable. */
+	exportBackup(): { filename: string; text: string; omitted: UUID[] } {
+		const omitted: UUID[] = [];
+		const ledgers = [];
+		for (const id of Object.keys(this.logs)) {
+			const meta = this.keyMeta[id];
+			if (!meta?.joinCode) {
+				omitted.push(id);
+				continue;
+			}
+			ledgers.push({
+				ledgerId: id,
+				joinCode: meta.joinCode,
+				fingerprint: meta.fingerprint,
+				root: meta.root,
+				recoveryAcknowledged: this.recoveryAck.includes(id),
+				events: this.logs[id] ?? []
+			});
+		}
+		const now = new Date();
+		const ts = now.toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
+		const file = buildBackup({
+			exportedAt: now.toISOString(),
+			exportedByDeviceId: this._deviceId,
+			ledgers
+		});
+		return { filename: `splitclone-backup-${ts}.json`, text: serializeBackup(file), omitted };
+	}
+
+	/** Inspect a backup file for the restore UI: per-ledger event counts and
+	 *  whether each already exists locally / would collide on its key. Pure
+	 *  read — writes nothing. */
+	async previewBackup(text: string): Promise<
+		| { ok: false; error: string }
+		| {
+				ok: true;
+				exportedAt: string;
+				ledgers: Array<{
+					ledgerId: UUID;
+					eventCount: number;
+					existsLocally: boolean;
+					keyConflict: boolean;
+				}>;
+		  }
+	> {
+		const parsed = parseBackup(text);
+		if (!parsed.ok) return { ok: false, error: parsed.error };
+		const ledgers = [];
+		for (const l of parsed.ledgers) {
+			const existing = await keyGet(l.ledgerId);
+			ledgers.push({
+				ledgerId: l.ledgerId,
+				eventCount: l.events.length,
+				existsLocally: existing !== undefined,
+				keyConflict: existing !== undefined && existing.fingerprint !== l.fingerprint
+			});
+		}
+		return { ok: true, exportedAt: parsed.exportedAt, ledgers };
+	}
+
+	/**
+	 * Restore selected ledgers from a backup (SRS Q9).
+	 *  - mode 'replace': wipe the whole local DB first (device migration);
+	 *    this device KEEPS its own id (Q9 decision 3, SC-ARC-LOG-1).
+	 *  - mode 'merge': union into existing state; idempotent (dedupe by event
+	 *    id); a same-id-different-key ledger is skipped, never overwritten.
+	 */
+	async importBackup(
+		text: string,
+		mode: 'merge' | 'replace',
+		selectedIds: UUID[]
+	): Promise<{ imported: UUID[]; skipped: Array<{ ledgerId: UUID; reason: string }> }> {
+		const parsed = parseBackup(text);
+		if (!parsed.ok) throw new Error(parsed.error);
+		const chosen = parsed.ledgers.filter((l) => selectedIds.includes(l.ledgerId));
+
+		if (mode === 'replace') {
+			await wipeAll();
+			await rememberDeviceId(this._deviceId); // never adopt the backup's id
+			this.logs = {};
+			this.keys = {};
+			this.keyMeta = {};
+			this.recoveryAck = [];
+		}
+
+		const imported: UUID[] = [];
+		const skipped: Array<{ ledgerId: UUID; reason: string }> = [];
+
+		for (const l of chosen) {
+			const decoded = await decodeJoinCode(l.joinCode);
+			if (!decoded.ok || !decoded.raw) {
+				skipped.push({ ledgerId: l.ledgerId, reason: decoded.error ?? 'bad join code' });
+				continue;
+			}
+			const raw = decoded.raw;
+			const fingerprint = await dataKeyFingerprint(raw);
+			if (fingerprint !== l.fingerprint) {
+				raw.fill(0);
+				skipped.push({ ledgerId: l.ledgerId, reason: 'join code / fingerprint mismatch' });
+				continue;
+			}
+			if (mode === 'merge') {
+				const existing = await keyGet(l.ledgerId);
+				if (existing && existing.fingerprint !== fingerprint) {
+					raw.fill(0);
+					skipped.push({
+						ledgerId: l.ledgerId,
+						reason: 'a different ledger already uses this id (key conflict) — not overwritten'
+					});
+					continue;
+				}
+			}
+			const key = await importDataKey(raw);
+			raw.fill(0);
+
+			const existingEvents =
+				mode === 'merge' ? (this.logs[l.ledgerId] ?? (await this.safeLoad(l.ledgerId, key))) : [];
+			const { added } = dedupeById(existingEvents, l.events);
+			for (const e of added) await appendEvent(l.ledgerId, this._deviceId, key, e);
+
+			const root = l.root as RootRef | undefined;
+			await keyPut({ ledgerId: l.ledgerId, key, fingerprint, joinCode: l.joinCode, root });
+			this.keys[l.ledgerId] = key;
+			this.keyMeta[l.ledgerId] = { joinCode: l.joinCode, fingerprint, root };
+			await this.registerLedger(l.ledgerId);
+			this.logs[l.ledgerId] = await loadLedgerEvents(l.ledgerId, key);
+
+			if (l.recoveryAcknowledged && !this.recoveryAck.includes(l.ledgerId)) {
+				this.recoveryAck = [...this.recoveryAck, l.ledgerId];
+				await metaSet(RECOVERY_ACK_KEY, this.recoveryAck);
+			}
+			imported.push(l.ledgerId);
+		}
+		return { imported, skipped };
+	}
+
+	/** loadLedgerEvents but never throws into the restore loop (a single
+	 *  unreadable existing ledger must not abort the import). */
+	private async safeLoad(ledgerId: UUID, key: CryptoKey): Promise<LedgerEvent[]> {
+		try {
+			return await loadLedgerEvents(ledgerId, key);
+		} catch {
+			return [];
+		}
 	}
 
 	/** Client-side validation of a pasted join code (SC-ARC-ENC-4). The actual

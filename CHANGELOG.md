@@ -3,7 +3,11 @@
 This file satisfies SC-ARC-FMT-3: it enumerates every on-disk/on-the-wire
 schema version and the changes between them. "File format" is defined in
 SC-ARC-FMT-1 (metadata file, segment layout/naming, encryption envelope,
-JSONL event schema, join-code encoding, CSV export).
+JSONL event schema, join-code encoding, CSV export, local backup file).
+
+The local **backup file** (SC-ARC-FMT-1 item (g)) carries its own
+independent version integer and is tracked in its own section below; its
+field-by-field spec is docs/backup-format.md.
 
 **Pre-v1.0 policy:** the format may still evolve. Each change is a deliberate
 decision and is recorded here. The hard stability lock (SC-ARC-FMT-3 — any
@@ -87,3 +91,28 @@ deliberate, not accidental.
   last-write-wins/tombstone behaviour as expenses. Reason: the expense list
   shows settlements and users edit them in place. Deliberate pre-v1.0 format
   change; SRS SC-ARC-LOG-2 updated in lockstep (requirements.sdoc v0.11).
+
+## Backup format version 1 (unreleased, in development)
+
+SC-ARC-FMT-1 item (g). The local backup file (SRS Q9 / `SC-FR-BAK-*`).
+Versioned on its **own** track via the `splitcloneBackup` integer inside
+the file, independent of the event-schema version above — a backup also
+embeds the event-schema version its `events[]` are written in, and a
+reader gates on both (refuse newer, accept older), mirroring
+SC-ARC-FMT-2. Full field-by-field spec, restore algorithm and the
+cross-version compatibility contract: `docs/backup-format.md` (kept in
+lockstep with this track per SC-ARC-FMT-3).
+
+- **Backup format v1** — single JSON file. Top level: `splitcloneBackup`,
+  `_warning`, `exportedAt`, `exportedByDeviceId`, `compatibility`
+  (`backupFormatVersion`, `eventSchemaVersion`, `writtenByAppVersion`,
+  `readableByAppVersions`, `formatDoc`), `ledgers[]`. Each ledger:
+  `ledgerId`, `joinCode` (the data key in clear — backup is deliberately
+  unencrypted, an accepted SC-ARC-ENC-\* exception, user-owned risk),
+  `fingerprint`, optional `root` sync hint, `recoveryAcknowledged`,
+  `events[]` (canonical event envelopes, `$bigint`-tagged Money exactly as
+  the JSONL event schema). Restore offers merge (idempotent; never
+  overwrites a same-id/different-key ledger) and replace (wipe then
+  restore); the restoring device keeps its own identity (SC-FR-BAK-5).
+  Project-owner-approved deliberate pre-1.0 decision; SRS SC-FR-BAK-1..5 +
+  SC-ARC-FMT-1 item (g) added in lockstep (requirements.sdoc v0.15).

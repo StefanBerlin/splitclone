@@ -41,4 +41,5 @@
 
 	<a class="btn btn-primary btn-block" href={resolve('/ledger/new')}>+ Create a new ledger</a>
 	<a class="btn btn-block" href={resolve('/ledger/join')}>Join with a code</a>
+	<a class="btn btn-block" href={resolve('/backup')}>Backup &amp; restore</a>
 </div>

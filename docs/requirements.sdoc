@@ -1,7 +1,7 @@
 [DOCUMENT]
 TITLE: SplitClone - Software Requirements Specification
 UID: SC-SRS
-VERSION: 0.14 (draft)
+VERSION: 0.15 (draft)
 DATE: 2026-05-17
 PREFIX: SC-
 OPTIONS:
@@ -64,7 +64,7 @@ STATEMENT: >>>
 - Data key: The 256-bit AES key, one per ledger, used to encrypt all event-log segments at rest in the shared folder. Generated on the device that creates the ledger; never written to the shared folder.
 - Join code: A serialised representation of the data key (as a base64 string with checksum, and as a QR code) that the creator of the ledger shares out-of-band with each new participant device so it can decrypt the ledger contents.
 - Key fingerprint: A short hash derived from the data key (e.g. truncated SHA-256) stored in the ledger's plaintext metadata. A joining device computes the same hash from its entered join code; a mismatch means the wrong code was entered, without revealing the key itself.
-- File format: The collection of on-disk and on-the-wire layouts that SplitClone reads or writes (metadata file, segment directory layout, segment encryption envelope, JSONL event schema, join code encoding, CSV export). Enumerated in SC-ARC-FMT-1.
+- File format: The collection of on-disk and on-the-wire layouts that SplitClone reads or writes (metadata file, segment directory layout, segment encryption envelope, JSONL event schema, join code encoding, CSV export, local backup file). Enumerated in SC-ARC-FMT-1.
 - Schema version: The monotonically increasing integer that identifies a snapshot of the file format. Stored in the plaintext metadata file (SC-FR-LED-3) so that any device can decide before reading whether it understands the format.
 <<<
 
@@ -646,6 +646,87 @@ syncing, offline, or sync error (with the error reason).
 
 [[/SECTION]]
 
+[[SECTION]]
+TITLE: Backup and Restore
+
+[TEXT]
+STATEMENT: >>>
+Local backup / restore (formerly open question Q9). The design decisions
+were taken deliberately and approved by the project owner before
+implementation, per the SC-ARC-FMT-3 pre-1.0 rule. The backup file is a
+file-format member, SC-ARC-FMT-1 item (g); its on-the-wire schema is
+documented field-by-field in docs/backup-format.md, which is the
+authoritative reference for a future hand-restore.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-BAK-1
+TITLE: Whole-database backup export
+STATEMENT: >>>
+The app shall export, in one user action, a single file containing the
+complete local application database needed to reconstruct app state on
+another device: every ledger's full event log, its data key in join-code
+form, key fingerprint, optional sync hint and recovery-acknowledged flag.
+Export is whole-database, not per-ledger (Q9 (d)); it is distinct from the
+per-ledger CSV export (SC-FR-EXR-*), which is a lossy accounting report.
+A ledger whose data key is not present on this device cannot be restored
+and shall be omitted from the file, with the user informed.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-BAK-2
+TITLE: Restore with merge or replace
+STATEMENT: >>>
+The app shall restore from a backup file with the user choosing per
+restore: (a) merge - union the selected ledgers into existing state, which
+shall be idempotent (re-importing the same file changes nothing) and shall
+never overwrite an existing ledger whose id matches but whose key differs
+(key conflict is reported and skipped); or (b) replace - wipe the local
+database, then restore the selected ledgers (clean device migration). The
+user shall be able to select which ledgers in the file to restore.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-BAK-3
+TITLE: Backup is unencrypted - user-owned risk
+STATEMENT: >>>
+The backup file is deliberately NOT encrypted and is human-readable
+(JSON). It contains every ledger's join code (data key) in clear text;
+anyone holding the file can decrypt every ledger in it. This is an
+explicit, accepted exception to SC-ARC-ENC-*. Securing the exported file
+is the user's responsibility, not the app's. The app shall state this
+prominently at export time and require an explicit acknowledgement before
+producing the file, and shall repeat the warning inside the file itself.
+The app shall never transmit the backup to any network endpoint.
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-BAK-4
+TITLE: Backup version gating
+STATEMENT: >>>
+The backup file shall declare its own backup-format version and the
+event-schema version its contents use. On restore the app shall refuse
+loudly (no partial or best-effort import) if either exceeds the version
+the app understands, telling the user to update the app; older versions
+shall be accepted. Every event in the file shall be re-validated through
+the canonical decoder before any data is written; any failure aborts the
+whole restore. (Mirrors SC-ARC-FMT-2 for item (g).)
+<<<
+
+[REQUIREMENT]
+UID: SC-FR-BAK-5
+TITLE: Restore preserves this device's identity
+STATEMENT: >>>
+A device restoring from a backup shall keep its own device identity and
+shall never adopt the identity of the device that wrote the backup
+(SC-ARC-IDN-1, SC-ARC-LOG-1 sole-writer). Restored events retain their
+original authorship in history; new events append under the restoring
+device. After a restore the user re-claims their participant per ledger
+via the normal multi-device claim flow (SC-FR-PRT-2 (c)).
+<<<
+
+[[/SECTION]]
+
 [[/SECTION]]
 
 [[SECTION]]
@@ -1165,11 +1246,22 @@ external tools. Specifically:
   (d) The plaintext JSONL event schema inside a segment, including the payload schema of every event type (SC-ARC-LOG-2).
   (e) The join-code encoding, in both QR and base64url-with-checksum forms (SC-ARC-ENC-4).
   (f) The CSV export schema (SC-FR-EXR-4).
+  (g) The local backup file schema (SC-FR-BAK-1; docs/backup-format.md).
 
 A single monotonically increasing integer schema version (declared in the
 metadata file, SC-FR-LED-3) shall identify the current snapshot of the
 format as a whole. A change to any of (a) - (f) requires incrementing the
 schema version.
+
+Item (g), the backup file, carries its OWN independent monotonically
+increasing version integer ("splitcloneBackup"), declared inside the
+backup file itself, plus an embedded copy of the (a)-(f) event-schema
+version its contents are written in. It is versioned separately because a
+backup is a self-describing one-shot artefact, not part of the
+continuously-synced shared folder; a backup reader gates on those two
+integers exactly as SC-ARC-FMT-2 gates the shared format (refuse a newer
+file loudly; accept older). All other governance (SC-ARC-FMT-3,
+changelog) applies to (g) unchanged.
 
 The local browser-side caches (IndexedDB layout, derived-state cache
 structure) are NOT part of the file format. They are private to a single
@@ -1528,7 +1620,11 @@ phase must close before implementation:
           per-ledger CSV export (SC-FR-EXR-*), which is a different
           feature (accounting export, not a backup).
 
-    Out of MVP scope; recorded so the design is deliberate when scheduled.
+    RESOLVED: scheduled and specified. The decisions were taken with the
+    project owner - (b) offer both merge and replace; (d) whole-database
+    export with per-ledger restore selection; device identity preserved on
+    restore - and are now normative requirements SC-FR-BAK-1..5 with the
+    file format documented in docs/backup-format.md (SC-ARC-FMT-1 item (g)).
 <<<
 
 [[/SECTION]]

@@ -20,3 +20,10 @@ export async function getDeviceId(): Promise<string> {
 	await metaSet(DEVICE_ID_KEY, id);
 	return id;
 }
+
+/** Re-persist a device id. Used after a replace-mode restore wipes the DB:
+ *  per SRS Q9 decision 3 the restoring device keeps its OWN identity and
+ *  never adopts the backup's (SC-ARC-IDN-1 / SC-ARC-LOG-1 sole-writer). */
+export async function rememberDeviceId(id: string): Promise<void> {
+	await metaSet(DEVICE_ID_KEY, id);
+}
